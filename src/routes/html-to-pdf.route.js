@@ -1,12 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const upload = require('../middleware/upload.middleware');
-const wkhtmltopdfService = require('../services/wkhtmltopdf.service');
+const playwrightService = require('../services/playwright.service');
 const { cleanupFiles } = require('../utils/cleanup.utils');
-const { execAsync } = require('../utils/file.utils');
 const path = require('path');
 
-// Endpoint principal de conversión
 router.post('/', upload.single('file'), async (req, res) => {
   let inputPath;
   const outputDir = path.join(__dirname, '../../outputs');
@@ -20,6 +18,11 @@ router.post('/', upload.single('file'), async (req, res) => {
       if (!inputPath) {
         return res.status(400).json({ error: 'URL requerida' });
       }
+      try {
+        new URL(inputPath);
+      } catch (e) {
+        return res.status(400).json({ error: 'URL inválida' });
+      }
     } else {
       if (!req.file) {
         return res.status(400).json({ error: 'Archivo HTML requerido' });
@@ -28,26 +31,64 @@ router.post('/', upload.single('file'), async (req, res) => {
       tempFiles.push(inputPath);
     }
     
+    // Parsear viewport
+    let viewport = { width: 1440, height: 900 };
+    if (req.body.viewport) {
+      try {
+        viewport = JSON.parse(req.body.viewport);
+        console.log('[Route] Viewport recibido:', viewport);
+      } catch (e) {
+        console.log('[Route] Error parseando viewport, usando default');
+      }
+    }
+    
+    // Parsear márgenes (acepta "margins" o "margin")
+    let margin = { top: 20, right: 20, bottom: 20, left: 20 };
+    const marginData = req.body.margins || req.body.margin;
+    if (marginData) {
+      try {
+        margin = JSON.parse(marginData);
+        console.log('[Route] Márgenes recibidos:', margin);
+      } catch (e) {
+        console.log('[Route] Error parseando márgenes, usando default');
+      }
+    }
+    
     const options = {
+      isUrl,
       format: req.body.pageFormat || 'A4',
-      isUrl
+      landscape: req.body.landscape === 'true',
+      viewport: viewport,
+      margin: margin
     };
     
-    const outputPath = await wkhtmltopdfService.htmlToPdf(inputPath, outputDir, options);
+    console.log('[Route] Opciones finales:', JSON.stringify(options, null, 2));
+    
+    const outputPath = await playwrightService.htmlToPdf(inputPath, outputDir, options);
     tempFiles.push(outputPath);
     
     res.download(outputPath, path.basename(outputPath), async (err) => {
+      if (err) console.error('Error enviando archivo:', err);
       await cleanupFiles(tempFiles);
     });
     
   } catch (error) {
-    console.error('Error:', error);
+    console.error('Error HTML→PDF:', error);
     await cleanupFiles(tempFiles);
-    res.status(500).json({ error: 'Error al convertir', details: error.message });
+    
+    let errorMessage = 'Error al convertir';
+    if (error.message.includes('net::ERR_NAME_NOT_RESOLVED')) {
+      errorMessage = 'No se pudo acceder a la URL.';
+    } else if (error.message.includes('Timeout')) {
+      errorMessage = 'El sitio tardó demasiado en cargar.';
+    } else if (error.message.includes('net::ERR_CONNECTION_REFUSED')) {
+      errorMessage = 'Conexión rechazada por el servidor.';
+    }
+    
+    res.status(500).json({ error: errorMessage, details: error.message });
   }
 });
 
-// Nuevo endpoint de preview (screenshot estático)
 router.post('/preview', upload.single('file'), async (req, res) => {
   let inputPath;
   const outputDir = path.join(__dirname, '../../outputs');
@@ -58,37 +99,66 @@ router.post('/preview', upload.single('file'), async (req, res) => {
     
     if (isUrl) {
       inputPath = req.body.url;
+      if (!inputPath) {
+        return res.status(400).json({ error: 'URL requerida' });
+      }
+      try {
+        new URL(inputPath);
+      } catch (e) {
+        return res.status(400).json({ error: 'URL inválida' });
+      }
     } else {
       if (!req.file) {
-        return res.status(400).json({ error: 'Archivo requerido' });
+        return res.status(400).json({ error: 'Archivo HTML requerido' });
       }
       inputPath = req.file.path;
       tempFiles.push(inputPath);
     }
     
-    const viewport = req.body.viewport ? JSON.parse(req.body.viewport) : { width: 1440, height: 900 };
-    const outputPath = path.join(outputDir, `preview-${Date.now()}.png`);
+    // Parsear viewport
+    let viewport = { width: 1440, height: 900 };
+    if (req.body.viewport) {
+      try {
+        viewport = JSON.parse(req.body.viewport);
+      } catch (e) {}
+    }
+    
+    const options = {
+      isUrl,
+      viewport: viewport,
+      fullPage: req.body.fullPage === 'true'
+    };
+    
+    const outputPath = await playwrightService.generatePreview(inputPath, outputDir, options);
     tempFiles.push(outputPath);
     
-    const source = isUrl ? inputPath : `file://${inputPath}`;
-    
-    // Generar screenshot con wkhtmltoimage
-    await execAsync(`wkhtmltoimage \
-      --width ${viewport.width} \
-      --quality 90 \
-      --enable-javascript \
-      --javascript-delay 1000 \
-      --load-error-handling ignore \
-      "${source}" "${outputPath}"`);
-    
     res.sendFile(outputPath, async (err) => {
+      if (err) console.error('Error enviando preview:', err);
       await cleanupFiles(tempFiles);
     });
     
   } catch (error) {
     console.error('Error generando preview:', error);
     await cleanupFiles(tempFiles);
-    res.status(500).json({ error: 'Error al generar preview' });
+    res.status(500).json({ error: 'Error al generar preview', details: error.message });
+  }
+});
+
+router.get('/health', async (req, res) => {
+  try {
+    const browser = await playwrightService.getBrowser();
+    res.json({
+      status: browser.isConnected() ? 'ok' : 'error',
+      engine: 'playwright',
+      browser: 'chromium',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'error',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
   }
 });
 
