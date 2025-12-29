@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const upload = require('../middleware/upload.middleware');
 const { cleanupFiles } = require('../utils/cleanup.utils');
+const fileStore = require('../services/file-store.service');
 const { PDFDocument } = require('pdf-lib');
 const JSZip = require('jszip');
 const fs = require('fs').promises;
@@ -101,9 +102,12 @@ router.post('/', upload.single('file'), async (req, res) => {
 
     if (outputs.length === 1) {
       const pdfBytes = await outputs[0].pdf.save();
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', 'attachment; filename="' + outputs[0].name + '"');
-      return res.send(Buffer.from(pdfBytes));
+      const fileId = await fileStore.storeFile(
+        Buffer.from(pdfBytes),
+        outputs[0].name,
+        'application/pdf'
+      );
+      return res.json({ success: true, fileId, fileName: outputs[0].name });
     }
 
     const zip = new JSZip();
@@ -113,9 +117,8 @@ router.post('/', upload.single('file'), async (req, res) => {
     }
 
     const zipBuffer = await zip.generateAsync({ type: 'nodebuffer' });
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', 'attachment; filename="split-files.zip"');
-    res.send(zipBuffer);
+    const fileId = await fileStore.storeFile(zipBuffer, 'split-files.zip', 'application/zip');
+    res.json({ success: true, fileId, fileName: 'split-files.zip' });
 
   } catch (error) {
     console.error('Error splitting PDF:', error);
