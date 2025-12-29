@@ -2,7 +2,6 @@ const express = require('express');
 const router = express.Router();
 const upload = require('../middleware/upload.middleware');
 const { cleanupFiles } = require('../utils/cleanup.utils');
-const fileStore = require('../services/file-store.service');
 const { PDFDocument, degrees } = require('pdf-lib');
 const fs = require('fs').promises;
 
@@ -78,13 +77,9 @@ router.post('/', upload.any(), async (req, res) => {
     const pdfBytes = await newPdf.save();
     await cleanupFiles(tempFiles);
 
-    const fileId = await fileStore.storeFile(
-      Buffer.from(pdfBytes),
-      'organized.pdf',
-      'application/pdf'
-    );
-
-    res.json({ success: true, fileId, fileName: 'organized.pdf' });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename="organized.pdf"');
+    res.send(Buffer.from(pdfBytes));
 
   } catch (error) {
     console.error('Error organizing PDF:', error);

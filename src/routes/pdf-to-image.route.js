@@ -3,13 +3,17 @@ const router = express.Router();
 const upload = require('../middleware/upload.middleware');
 const { execAsync } = require('../utils/file.utils');
 const { cleanupFiles } = require('../utils/cleanup.utils');
-const fileStore = require('../services/file-store.service');
 const path = require('path');
 const fs = require('fs').promises;
-const JSZip = require('jszip');
+const archiver = require('archiver');
 
+/**
+ * POST /api/pdf-to-image
+ * Convierte páginas de un PDF a imágenes
+ * Devuelve imagen única o ZIP con múltiples imágenes
+ */
 router.post('/', upload.single('file'), async (req, res) => {
-  const inputPath = req.file ? req.file.path : null;
+  const inputPath = req.file?.path;
   const outputDir = path.join(__dirname, '../../outputs');
   const tempFiles = inputPath ? [inputPath] : [];
   
@@ -31,27 +35,27 @@ router.post('/', upload.single('file'), async (req, res) => {
     const validFormats = ['jpg', 'jpeg', 'png', 'webp', 'tiff', 'bmp'];
     if (!validFormats.includes(format.toLowerCase())) {
       await cleanupFiles(tempFiles);
-      return res.status(400).json({ error: 'Formato no soportado: ' + format });
+      return res.status(400).json({ error: `Formato no soportado: ${format}` });
     }
     
     const validDpi = [72, 150, 300, 600];
     const finalDpi = validDpi.includes(dpi) ? dpi : 150;
     
-    const pageCountResult = await execAsync('pdfinfo "' + inputPath + '" | grep "Pages:" | awk \'{print $2}\'');
+    // Obtener total de páginas
+    const pageCountResult = await execAsync(`pdfinfo "${inputPath}" | grep "Pages:" | awk '{print $2}'`);
     const totalPages = parseInt(pageCountResult.stdout.trim()) || 1;
     
+    // Parsear páginas
     let pageNumbers = [];
     if (pagesParam === 'all') {
-      pageNumbers = Array.from({ length: totalPages }, function(_, i) { return i + 1; });
+      pageNumbers = Array.from({ length: totalPages }, (_, i) => i + 1);
     } else if (pagesParam.includes('-')) {
-      const parts = pagesParam.split('-');
-      const start = parseInt(parts[0]);
-      const end = parseInt(parts[1]);
+      const [start, end] = pagesParam.split('-').map(Number);
       for (let i = start; i <= Math.min(end, totalPages); i++) {
         if (i >= 1) pageNumbers.push(i);
       }
     } else if (pagesParam.includes(',')) {
-      pageNumbers = pagesParam.split(',').map(Number).filter(function(n) { return n >= 1 && n <= totalPages; });
+      pageNumbers = pagesParam.split(',').map(Number).filter(n => n >= 1 && n <= totalPages);
     } else {
       const pageNum = parseInt(pagesParam);
       if (pageNum >= 1 && pageNum <= totalPages) {
@@ -72,6 +76,7 @@ router.post('/', upload.single('file'), async (req, res) => {
     const timestamp = Date.now();
     const ext = format === 'jpeg' ? 'jpg' : format;
     
+    // Determinar device de Ghostscript
     let gsDevice;
     switch (format.toLowerCase()) {
       case 'jpg':
@@ -92,36 +97,53 @@ router.post('/', upload.single('file'), async (req, res) => {
     }
     
     const outputFiles = [];
+    
+    // OPTIMIZACIÓN: Procesar en lotes paralelos
     const BATCH_SIZE = 5;
     
     for (let i = 0; i < pageNumbers.length; i += BATCH_SIZE) {
       const batch = pageNumbers.slice(i, i + BATCH_SIZE);
       
-      const promises = batch.map(async function(pageNum) {
-        const outputFilename = 'page-' + String(pageNum).padStart(3, '0') + '-' + timestamp + '.' + ext;
+      const promises = batch.map(async (pageNum) => {
+        const outputFilename = `page-${String(pageNum).padStart(3, '0')}-${timestamp}.${ext}`;
         const outputPath = path.join(outputDir, outputFilename);
         
         try {
           if (format === 'webp') {
-            const tempPng = path.join(outputDir, 'temp-' + pageNum + '-' + timestamp + '.png');
-            await execAsync('gs -dNOPAUSE -dBATCH -dSAFER -sDEVICE=png16m -r' + finalDpi + ' -dFirstPage=' + pageNum + ' -dLastPage=' + pageNum + ' -sOutputFile="' + tempPng + '" "' + inputPath + '"');
-            await execAsync('convert "' + tempPng + '" -quality ' + quality + ' "' + outputPath + '"');
-            await fs.unlink(tempPng).catch(function() {});
+            // WebP: PNG primero, luego convertir
+            const tempPng = path.join(outputDir, `temp-${pageNum}-${timestamp}.png`);
+            
+            await execAsync(`
+              gs -dNOPAUSE -dBATCH -dSAFER -sDEVICE=png16m \
+                 -r${finalDpi} -dFirstPage=${pageNum} -dLastPage=${pageNum} \
+                 -sOutputFile="${tempPng}" "${inputPath}"
+            `);
+            
+            await execAsync(`convert "${tempPng}" -quality ${quality} "${outputPath}"`);
+            await fs.unlink(tempPng).catch(() => {});
           } else {
-            const qualityParam = ['jpg', 'jpeg'].includes(format.toLowerCase()) ? '-dJPEGQ=' + quality : '';
-            await execAsync('gs -dNOPAUSE -dBATCH -dSAFER -sDEVICE=' + gsDevice + ' -r' + finalDpi + ' ' + qualityParam + ' -dFirstPage=' + pageNum + ' -dLastPage=' + pageNum + ' -sOutputFile="' + outputPath + '" "' + inputPath + '"');
+            // Conversión directa
+            const qualityParam = ['jpg', 'jpeg'].includes(format.toLowerCase()) 
+              ? `-dJPEGQ=${quality}` : '';
+            
+            await execAsync(`
+              gs -dNOPAUSE -dBATCH -dSAFER -sDEVICE=${gsDevice} \
+                 -r${finalDpi} ${qualityParam} \
+                 -dFirstPage=${pageNum} -dLastPage=${pageNum} \
+                 -sOutputFile="${outputPath}" "${inputPath}"
+            `);
           }
           
           await fs.access(outputPath);
-          return { pageNum: pageNum, path: outputPath, filename: 'page-' + pageNum + '.' + ext };
+          return { pageNum, path: outputPath, filename: `page-${pageNum}.${ext}` };
         } catch (e) {
-          console.error('Error página ' + pageNum + ':', e.message);
+          console.error(`Error página ${pageNum}:`, e.message);
           return null;
         }
       });
       
       const results = await Promise.all(promises);
-      outputFiles.push.apply(outputFiles, results.filter(Boolean));
+      outputFiles.push(...results.filter(Boolean));
     }
     
     if (outputFiles.length === 0) {
@@ -129,47 +151,59 @@ router.post('/', upload.single('file'), async (req, res) => {
       return res.status(500).json({ error: 'No se pudieron convertir las páginas' });
     }
     
-    outputFiles.sort(function(a, b) { return a.pageNum - b.pageNum; });
-    tempFiles.push.apply(tempFiles, outputFiles.map(function(f) { return f.path; }));
+    // Ordenar por número de página
+    outputFiles.sort((a, b) => a.pageNum - b.pageNum);
+    tempFiles.push(...outputFiles.map(f => f.path));
     
+    // Si es una sola imagen, enviarla directamente
     if (outputFiles.length === 1) {
-      const imageBuffer = await fs.readFile(outputFiles[0].path);
-      await cleanupFiles(tempFiles);
-      
       const mimeTypes = {
         jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
         webp: 'image/webp', tiff: 'image/tiff', bmp: 'image/bmp'
       };
       
-      const fileId = await fileStore.storeFile(
-        imageBuffer,
-        outputFiles[0].filename,
-        mimeTypes[format] || 'application/octet-stream'
-      );
-      
-      return res.json({ success: true, fileId, fileName: outputFiles[0].filename });
+      res.setHeader('Content-Type', mimeTypes[format] || 'application/octet-stream');
+      return res.sendFile(outputFiles[0].path, async () => {
+        await cleanupFiles(tempFiles);
+      });
     }
     
-    const zip = new JSZip();
+    // Múltiples imágenes: crear ZIP y enviar
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', 'attachment; filename="pdf-images.zip"');
+    
+    const archive = archiver('zip', { zlib: { level: 5 } });
+    
+    archive.on('error', async (err) => {
+      console.error('Error ZIP:', err);
+      await cleanupFiles(tempFiles);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Error creando ZIP' });
+      }
+    });
+    
+    archive.on('end', async () => {
+      await cleanupFiles(tempFiles);
+    });
+    
+    archive.pipe(res);
+    
     for (const file of outputFiles) {
-      const content = await fs.readFile(file.path);
-      zip.file(file.filename, content);
+      archive.file(file.path, { name: file.filename });
     }
     
-    const zipBuffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
-    await cleanupFiles(tempFiles);
-    
-    const fileId = await fileStore.storeFile(zipBuffer, 'pdf-images.zip', 'application/zip');
-    res.json({ success: true, fileId, fileName: 'pdf-images.zip' });
+    await archive.finalize();
     
   } catch (error) {
     console.error('Error PDF→Image:', error);
     await cleanupFiles(tempFiles);
-    res.status(500).json({ error: 'Error al convertir', details: error.message });
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Error al convertir', details: error.message });
+    }
   }
 });
 
-router.get('/formats', function(req, res) {
+router.get('/formats', (req, res) => {
   res.json({
     formats: [
       { id: 'jpg', label: 'JPEG', mimeType: 'image/jpeg', supportsQuality: true },

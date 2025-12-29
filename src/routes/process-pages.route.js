@@ -2,7 +2,6 @@ const express = require('express');
 const router = express.Router();
 const upload = require('../middleware/upload.middleware');
 const { cleanupFiles } = require('../utils/cleanup.utils');
-const fileStore = require('../services/file-store.service');
 const { PDFDocument, degrees } = require('pdf-lib');
 const fs = require('fs').promises;
 
@@ -48,13 +47,9 @@ router.post('/', upload.single('file'), async (req, res) => {
     const pdfBytes = await newDoc.save();
     await cleanupFiles(tempFiles);
 
-    const fileId = await fileStore.storeFile(
-      Buffer.from(pdfBytes),
-      'processed.pdf',
-      'application/pdf'
-    );
-
-    res.json({ success: true, fileId, fileName: 'processed.pdf' });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename="processed.pdf"');
+    res.send(Buffer.from(pdfBytes));
 
   } catch (error) {
     console.error('Error processing pages:', error);
