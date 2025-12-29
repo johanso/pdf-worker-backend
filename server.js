@@ -36,6 +36,11 @@ app.use('/api/compress-pdf', require('./src/routes/compress-pdf.route'));
 
 // ===== RUTAS IMAGEMAGICK =====
 app.use('/api/pdf-to-image', require('./src/routes/pdf-to-image.route'));
+app.use('/api/merge-pdf', require('./src/routes/merge-pdf.route'));
+app.use('/api/organize-pdf', require('./src/routes/organize-pdf.route'));
+app.use('/api/rotate-pdf', require('./src/routes/rotate-pdf.route'));
+app.use('/api/split-pdf', require('./src/routes/split-pdf.route'));
+app.use('/api/process-pages', require('./src/routes/process-pages.route'));
 
 // ===== RUTAS QPDF =====
 app.use('/api/protect-pdf', require('./src/routes/protect-pdf.route'));
