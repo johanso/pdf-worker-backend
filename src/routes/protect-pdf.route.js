@@ -3,9 +3,7 @@ const router = express.Router();
 const upload = require('../middleware/upload.middleware');
 const qpdfService = require('../services/qpdf.service');
 const { cleanupFiles } = require('../utils/cleanup.utils');
-const fileStore = require('../services/file-store.service');
 const path = require('path');
-const fs = require('fs').promises;
 
 router.post('/', upload.single('file'), async (req, res) => {
   const inputPath = req.file.path;
@@ -14,23 +12,18 @@ router.post('/', upload.single('file'), async (req, res) => {
   
   try {
     if (!req.file.originalname.match(/\.pdf$/i)) {
-      await cleanupFiles([inputPath]);
       return res.status(400).json({ error: 'Solo archivos .pdf' });
     }
     
     if (!password) {
-      await cleanupFiles([inputPath]);
       return res.status(400).json({ error: 'Se requiere contraseña' });
     }
     
     const outputPath = await qpdfService.encryptPdf(inputPath, outputDir, password);
-    const pdfBuffer = await fs.readFile(outputPath);
-    await cleanupFiles([inputPath, outputPath]);
-
-    const fileName = 'protected-' + req.file.originalname;
-    const fileId = await fileStore.storeFile(pdfBuffer, fileName, 'application/pdf');
-
-    res.json({ success: true, fileId, fileName });
+    
+    res.download(outputPath, path.basename(outputPath), async (err) => {
+      await cleanupFiles([inputPath, outputPath]);
+    });
     
   } catch (error) {
     console.error('Error al proteger PDF:', error);
