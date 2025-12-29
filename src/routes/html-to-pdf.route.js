@@ -3,7 +3,9 @@ const router = express.Router();
 const upload = require('../middleware/upload.middleware');
 const playwrightService = require('../services/playwright.service');
 const { cleanupFiles } = require('../utils/cleanup.utils');
+const fileStore = require('../services/file-store.service');
 const path = require('path');
+const fs = require('fs').promises;
 
 router.post('/', upload.single('file'), async (req, res) => {
   let inputPath;
@@ -31,27 +33,19 @@ router.post('/', upload.single('file'), async (req, res) => {
       tempFiles.push(inputPath);
     }
     
-    // Parsear viewport
     let viewport = { width: 1440, height: 900 };
     if (req.body.viewport) {
       try {
         viewport = JSON.parse(req.body.viewport);
-        console.log('[Route] Viewport recibido:', viewport);
-      } catch (e) {
-        console.log('[Route] Error parseando viewport, usando default');
-      }
+      } catch (e) {}
     }
     
-    // Parsear márgenes (acepta "margins" o "margin")
     let margin = { top: 20, right: 20, bottom: 20, left: 20 };
     const marginData = req.body.margins || req.body.margin;
     if (marginData) {
       try {
         margin = JSON.parse(marginData);
-        console.log('[Route] Márgenes recibidos:', margin);
-      } catch (e) {
-        console.log('[Route] Error parseando márgenes, usando default');
-      }
+      } catch (e) {}
     }
     
     const options = {
@@ -62,15 +56,15 @@ router.post('/', upload.single('file'), async (req, res) => {
       margin: margin
     };
     
-    console.log('[Route] Opciones finales:', JSON.stringify(options, null, 2));
-    
     const outputPath = await playwrightService.htmlToPdf(inputPath, outputDir, options);
+    const pdfBuffer = await fs.readFile(outputPath);
     tempFiles.push(outputPath);
-    
-    res.download(outputPath, path.basename(outputPath), async (err) => {
-      if (err) console.error('Error enviando archivo:', err);
-      await cleanupFiles(tempFiles);
-    });
+    await cleanupFiles(tempFiles);
+
+    const fileName = isUrl ? 'webpage.pdf' : req.file.originalname.replace(/\.html?$/i, '.pdf');
+    const fileId = await fileStore.storeFile(pdfBuffer, fileName, 'application/pdf');
+
+    res.json({ success: true, fileId, fileName });
     
   } catch (error) {
     console.error('Error HTML→PDF:', error);
@@ -81,8 +75,6 @@ router.post('/', upload.single('file'), async (req, res) => {
       errorMessage = 'No se pudo acceder a la URL.';
     } else if (error.message.includes('Timeout')) {
       errorMessage = 'El sitio tardó demasiado en cargar.';
-    } else if (error.message.includes('net::ERR_CONNECTION_REFUSED')) {
-      errorMessage = 'Conexión rechazada por el servidor.';
     }
     
     res.status(500).json({ error: errorMessage, details: error.message });
@@ -102,11 +94,6 @@ router.post('/preview', upload.single('file'), async (req, res) => {
       if (!inputPath) {
         return res.status(400).json({ error: 'URL requerida' });
       }
-      try {
-        new URL(inputPath);
-      } catch (e) {
-        return res.status(400).json({ error: 'URL inválida' });
-      }
     } else {
       if (!req.file) {
         return res.status(400).json({ error: 'Archivo HTML requerido' });
@@ -115,7 +102,6 @@ router.post('/preview', upload.single('file'), async (req, res) => {
       tempFiles.push(inputPath);
     }
     
-    // Parsear viewport
     let viewport = { width: 1440, height: 900 };
     if (req.body.viewport) {
       try {
@@ -133,7 +119,6 @@ router.post('/preview', upload.single('file'), async (req, res) => {
     tempFiles.push(outputPath);
     
     res.sendFile(outputPath, async (err) => {
-      if (err) console.error('Error enviando preview:', err);
       await cleanupFiles(tempFiles);
     });
     
@@ -154,11 +139,7 @@ router.get('/health', async (req, res) => {
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    res.status(500).json({
-      status: 'error',
-      error: error.message,
-      timestamp: new Date().toISOString()
-    });
+    res.status(500).json({ status: 'error', error: error.message });
   }
 });
 

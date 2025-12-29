@@ -3,6 +3,7 @@ const router = express.Router();
 const upload = require('../middleware/upload.middleware');
 const ghostscriptService = require('../services/ghostscript.service');
 const { cleanupFiles } = require('../utils/cleanup.utils');
+const fileStore = require('../services/file-store.service');
 const path = require('path');
 const fs = require('fs').promises;
 
@@ -13,18 +14,18 @@ router.post('/', upload.single('file'), async (req, res) => {
   
   try {
     if (!req.file.originalname.match(/\.pdf$/i)) {
+      await cleanupFiles([inputPath]);
       return res.status(400).json({ error: 'Solo archivos .pdf' });
     }
     
-    const originalStats = await fs.stat(inputPath);
     const outputPath = await ghostscriptService.compressPdf(inputPath, outputDir, quality);
-    const compressedStats = await fs.stat(outputPath);
-    
-    const reduction = ((originalStats.size - compressedStats.size) / originalStats.size * 100).toFixed(2);
-    
-    res.download(outputPath, path.basename(outputPath), async (err) => {
-      await cleanupFiles([inputPath, outputPath]);
-    });
+    const pdfBuffer = await fs.readFile(outputPath);
+    await cleanupFiles([inputPath, outputPath]);
+
+    const fileName = 'compressed-' + req.file.originalname;
+    const fileId = await fileStore.storeFile(pdfBuffer, fileName, 'application/pdf');
+
+    res.json({ success: true, fileId, fileName });
     
   } catch (error) {
     console.error('Error al comprimir:', error);

@@ -3,6 +3,7 @@ const router = express.Router();
 const upload = require('../middleware/upload.middleware');
 const { execAsync } = require('../utils/file.utils');
 const { cleanupFiles } = require('../utils/cleanup.utils');
+const fileStore = require('../services/file-store.service');
 const path = require('path');
 const fs = require('fs').promises;
 
@@ -46,7 +47,7 @@ router.post('/', upload.array('images', 200), async (req, res) => {
 
     const marginPx = MARGINS[margin] || MARGINS.small;
     const timestamp = Date.now();
-    const outputPath = path.join(outputDir, `images-${timestamp}.pdf`);
+    const outputPath = path.join(outputDir, 'images-' + timestamp + '.pdf');
 
     const processedImages = [];
 
@@ -58,15 +59,15 @@ router.post('/', upload.array('images', 200), async (req, res) => {
 
       if (rotation !== 0) {
         const ext = file.originalname.split('.').pop().toLowerCase();
-        const rotatedPath = file.path + `-rotated.${ext}`;
-        await execAsync(`convert "${file.path}" -rotate ${rotation} "${rotatedPath}"`);
+        const rotatedPath = file.path + '-rotated.' + ext;
+        await execAsync('convert "' + file.path + '" -rotate ' + rotation + ' "' + rotatedPath + '"');
         tempFiles.push(rotatedPath);
         imagePath = rotatedPath;
       }
 
       if (quality === 'compressed') {
-        const compressedPath = file.path + `-compressed.jpg`;
-        await execAsync(`convert "${imagePath}" -quality 80 "${compressedPath}"`);
+        const compressedPath = file.path + '-compressed.jpg';
+        await execAsync('convert "' + imagePath + '" -quality 80 "' + compressedPath + '"');
         tempFiles.push(compressedPath);
         imagePath = compressedPath;
       }
@@ -75,53 +76,54 @@ router.post('/', upload.array('images', 200), async (req, res) => {
     }
 
     if (pageSize === 'fit') {
-      const marginArg = marginPx > 0 ? `-border ${marginPx} -bordercolor white` : '';
-      await execAsync(`
-        convert ${processedImages.map(p => \`"\${p}"\`).join(' ')} \
-          ${marginArg} \
-          -quality 95 \
-          "${outputPath}"
-      `);
+      const marginArg = marginPx > 0 ? '-border ' + marginPx + ' -bordercolor white' : '';
+      const imagesList = processedImages.map(function(p) { return '"' + p + '"'; }).join(' ');
+      await execAsync('convert ' + imagesList + ' ' + marginArg + ' -quality 95 "' + outputPath + '"');
     } else {
       const size = PAGE_SIZES[pageSize] || PAGE_SIZES.a4;
       const pdfPages = [];
       
       for (let i = 0; i < processedImages.length; i++) {
         const imgPath = processedImages[i];
-        const pagePath = path.join(outputDir, `page-${timestamp}-${i}.pdf`);
+        const pagePath = path.join(outputDir, 'page-' + timestamp + '-' + i + '.pdf');
         tempFiles.push(pagePath);
 
-        const identifyResult = await execAsync(`identify -format "%w %h" "${imgPath}"`);
-        const [imgWidth, imgHeight] = identifyResult.stdout.trim().split(' ').map(Number);
+        const identifyResult = await execAsync('identify -format "%w %h" "' + imgPath + '"');
+        const dims = identifyResult.stdout.trim().split(' ');
+        const imgWidth = parseInt(dims[0]);
+        const imgHeight = parseInt(dims[1]);
 
         let pageWidth = size.width;
         let pageHeight = size.height;
 
         if (orientation === 'landscape') {
-          [pageWidth, pageHeight] = [pageHeight, pageWidth];
+          const temp = pageWidth;
+          pageWidth = pageHeight;
+          pageHeight = temp;
         } else if (orientation === 'auto') {
           const imgRatio = imgWidth / imgHeight;
           const portraitRatio = size.width / size.height;
           
           if (imgRatio > 1 && portraitRatio < 1) {
-            [pageWidth, pageHeight] = [pageHeight, pageWidth];
+            const temp = pageWidth;
+            pageWidth = pageHeight;
+            pageHeight = temp;
           }
         }
 
         const availableWidth = pageWidth - marginPx * 2;
         const availableHeight = pageHeight - marginPx * 2;
 
-        await execAsync(`
-          convert "${imgPath}" \
-            -resize ${availableWidth}x${availableHeight} \
-            -gravity center \
-            -background white \
-            -extent ${pageWidth}x${pageHeight} \
-            -units PixelsPerInch \
-            -density 72 \
-            "${pagePath}"
-        `);
-
+        const convertCmd = 'convert "' + imgPath + '" ' +
+          '-resize ' + availableWidth + 'x' + availableHeight + ' ' +
+          '-gravity center ' +
+          '-background white ' +
+          '-extent ' + pageWidth + 'x' + pageHeight + ' ' +
+          '-units PixelsPerInch ' +
+          '-density 72 ' +
+          '"' + pagePath + '"';
+        
+        await execAsync(convertCmd);
         pdfPages.push(pagePath);
       }
 
@@ -129,25 +131,25 @@ router.post('/', upload.array('images', 200), async (req, res) => {
         await fs.copyFile(pdfPages[0], outputPath);
       } else {
         try {
-          await execAsync(`pdfunite ${pdfPages.map(p => \`"\${p}"\`).join(' ')} "${outputPath}"`);
+          const pagesList = pdfPages.map(function(p) { return '"' + p + '"'; }).join(' ');
+          await execAsync('pdfunite ' + pagesList + ' "' + outputPath + '"');
         } catch (e) {
-          await execAsync(`convert ${pdfPages.map(p => \`"\${p}"\`).join(' ')} "${outputPath}"`);
+          const pagesList = pdfPages.map(function(p) { return '"' + p + '"'; }).join(' ');
+          await execAsync('convert ' + pagesList + ' "' + outputPath + '"');
         }
       }
     }
 
     await fs.access(outputPath);
+    const pdfBuffer = await fs.readFile(outputPath);
     tempFiles.push(outputPath);
+    await cleanupFiles(tempFiles);
 
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', 'attachment; filename="images-to-pdf.pdf"');
-    
-    res.sendFile(outputPath, async (err) => {
-      await cleanupFiles(tempFiles);
-    });
+    const fileId = await fileStore.storeFile(pdfBuffer, 'images-to-pdf.pdf', 'application/pdf');
+    res.json({ success: true, fileId, fileName: 'images-to-pdf.pdf' });
 
   } catch (error) {
-    console.error('Error Image→PDF:', error);
+    console.error('Error Image to PDF:', error);
     await cleanupFiles(tempFiles);
     res.status(500).json({ 
       error: 'Error al crear PDF', 
@@ -156,7 +158,7 @@ router.post('/', upload.array('images', 200), async (req, res) => {
   }
 });
 
-router.get('/info', (req, res) => {
+router.get('/info', function(req, res) {
   res.json({
     supportedFormats: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'tiff'],
     pageSizes: ['a4', 'letter', 'legal', 'fit'],
