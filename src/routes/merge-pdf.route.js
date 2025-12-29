@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const upload = require('../middleware/upload.middleware');
 const { cleanupFiles } = require('../utils/cleanup.utils');
+const fileStore = require('../services/file-store.service');
 const { PDFDocument, degrees } = require('pdf-lib');
 const fs = require('fs').promises;
 
@@ -42,7 +43,7 @@ router.post('/', upload.array('files', 50), async (req, res) => {
         console.error('Error loading PDF:', file.originalname, error.message);
         await cleanupFiles(tempFiles);
         return res.status(400).json({ 
-          error: 'El archivo "' + file.originalname + '" no es un PDF válido o está corrupto.' 
+          error: `El archivo "${file.originalname}" no es un PDF válido o está corrupto.`
         });
       }
     }
@@ -55,9 +56,20 @@ router.post('/', upload.array('files', 50), async (req, res) => {
     const pdfBytes = await mergedPdf.save();
     await cleanupFiles(tempFiles);
 
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', 'attachment; filename="merged.pdf"');
-    res.send(Buffer.from(pdfBytes));
+    // Guardar en file store y devolver fileId
+    const fileId = await fileStore.storeFile(
+      Buffer.from(pdfBytes),
+      'merged.pdf',
+      'application/pdf'
+    );
+
+    res.json({ 
+      success: true,
+      fileId,
+      fileName: 'merged.pdf',
+      size: pdfBytes.byteLength,
+      pages: mergedPdf.getPageCount()
+    });
 
   } catch (error) {
     console.error('Error merging PDFs:', error);

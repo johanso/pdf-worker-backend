@@ -1,11 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const upload = require('../middleware/upload.middleware');
+const { validatePdf } = require('../middleware/pdf-validation.middleware');
 const { cleanupFiles } = require('../utils/cleanup.utils');
 const { PDFDocument, degrees } = require('pdf-lib');
 const fs = require('fs').promises;
 
-router.post('/', upload.any(), async (req, res) => {
+router.post('/', upload.any(), validatePdf, async (req, res) => {
   const tempFiles = req.files ? req.files.map(f => f.path) : [];
   
   try {
@@ -56,7 +57,7 @@ router.post('/', upload.any(), async (req, res) => {
         if (!srcDoc) {
           const buffer = filesMap.get(fileIndex);
           if (!buffer) continue;
-          srcDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
+          srcDoc = await PDFDocument.load(buffer);
           loadedPdfs.set(fileIndex, srcDoc);
         }
 

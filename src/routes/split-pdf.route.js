@@ -1,12 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const upload = require('../middleware/upload.middleware');
+const { validatePdf } = require('../middleware/pdf-validation.middleware');
 const { cleanupFiles } = require('../utils/cleanup.utils');
 const { PDFDocument } = require('pdf-lib');
 const JSZip = require('jszip');
 const fs = require('fs').promises;
 
-router.post('/', upload.single('file'), async (req, res) => {
+router.post('/', upload.single('file'), validatePdf, async (req, res) => {
   const tempFiles = req.file ? [req.file.path] : [];
   
   try {
@@ -18,7 +19,7 @@ router.post('/', upload.single('file'), async (req, res) => {
     const mode = req.body.mode;
     const config = JSON.parse(req.body.config || '{}');
     const fileBuffer = await fs.readFile(req.file.path);
-    const sourcePdf = await PDFDocument.load(fileBuffer, { ignoreEncryption: true });
+    const sourcePdf = await PDFDocument.load(fileBuffer);
     const totalPages = sourcePdf.getPageCount();
 
     const outputs = [];

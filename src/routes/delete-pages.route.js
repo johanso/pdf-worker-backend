@@ -1,11 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const upload = require('../middleware/upload.middleware');
+const { validatePdf } = require('../middleware/pdf-validation.middleware');
 const { cleanupFiles } = require('../utils/cleanup.utils');
 const { PDFDocument, degrees } = require('pdf-lib');
 const fs = require('fs').promises;
 
-router.post('/', upload.single('file'), async (req, res) => {
+router.post('/', upload.single('file'), validatePdf, async (req, res) => {
   const tempFiles = req.file ? [req.file.path] : [];
   
   try {
@@ -16,7 +17,7 @@ router.post('/', upload.single('file'), async (req, res) => {
 
     const pageInstructions = JSON.parse(req.body.pageInstructions);
     const fileBuffer = await fs.readFile(req.file.path);
-    const srcDoc = await PDFDocument.load(fileBuffer, { ignoreEncryption: true });
+    const srcDoc = await PDFDocument.load(fileBuffer);
     const newDoc = await PDFDocument.create();
 
     const indicesToCopy = pageInstructions.map(pi => pi.originalIndex);
