@@ -3,8 +3,21 @@ const router = express.Router();
 const upload = require('../middleware/upload.middleware');
 const { validatePdf } = require('../middleware/pdf-validation.middleware');
 const { cleanupFiles } = require('../utils/cleanup.utils');
+const fileStore = require('../services/file-store.service');
 const { PDFDocument, degrees } = require('pdf-lib');
 const fs = require('fs').promises;
+const zlib = require('zlib');
+const { promisify } = require('util');
+
+const gunzip = promisify(zlib.gunzip);
+
+async function decompressIfNeeded(buffer, fileName) {
+  if (buffer[0] === 0x1f && buffer[1] === 0x8b) {
+    console.log(`[Decompress] Decompressing: ${fileName}`);
+    return await gunzip(buffer);
+  }
+  return buffer;
+}
 
 router.post('/', upload.single('file'), validatePdf, async (req, res) => {
   const tempFiles = req.file ? [req.file.path] : [];
@@ -15,13 +28,19 @@ router.post('/', upload.single('file'), validatePdf, async (req, res) => {
       return res.status(400).json({ error: 'Faltan archivo o instrucciones' });
     }
 
+    const isCompressed = req.body.compressed === 'true';
     const pageInstructions = JSON.parse(req.body.pageInstructions);
+    
     if (!Array.isArray(pageInstructions) || pageInstructions.length === 0) {
       await cleanupFiles(tempFiles);
       return res.status(400).json({ error: 'Instrucciones inválidas' });
     }
 
-    const fileBuffer = await fs.readFile(req.file.path);
+    let fileBuffer = await fs.readFile(req.file.path);
+    if (isCompressed || req.file.originalname.endsWith('.gz')) {
+      fileBuffer = await decompressIfNeeded(fileBuffer, req.file.originalname);
+    }
+    
     const srcDoc = await PDFDocument.load(fileBuffer);
     const newDoc = await PDFDocument.create();
 
@@ -48,9 +67,19 @@ router.post('/', upload.single('file'), validatePdf, async (req, res) => {
     const pdfBytes = await newDoc.save();
     await cleanupFiles(tempFiles);
 
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', 'attachment; filename="processed.pdf"');
-    res.send(Buffer.from(pdfBytes));
+    const fileId = await fileStore.storeFile(
+      Buffer.from(pdfBytes),
+      'processed.pdf',
+      'application/pdf'
+    );
+
+    res.json({
+      success: true,
+      fileId,
+      fileName: 'processed.pdf',
+      size: pdfBytes.byteLength,
+      pages: newDoc.getPageCount()
+    });
 
   } catch (error) {
     console.error('Error processing pages:', error);

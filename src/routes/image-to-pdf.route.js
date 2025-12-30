@@ -3,8 +3,13 @@ const router = express.Router();
 const upload = require('../middleware/upload.middleware');
 const { execAsync } = require('../utils/file.utils');
 const { cleanupFiles } = require('../utils/cleanup.utils');
+const fileStore = require('../services/file-store.service');
 const path = require('path');
 const fs = require('fs').promises;
+const zlib = require('zlib');
+const { promisify } = require('util');
+
+const gunzip = promisify(zlib.gunzip);
 
 const PAGE_SIZES = {
   a4: { width: 595, height: 842 },
@@ -18,6 +23,22 @@ const MARGINS = {
   normal: 40,
 };
 
+async function decompressFileIfNeeded(filePath, originalName, isCompressed) {
+  if (!isCompressed && !originalName.endsWith('.gz')) {
+    return filePath;
+  }
+
+  const buffer = await fs.readFile(filePath);
+  if (buffer[0] === 0x1f && buffer[1] === 0x8b) {
+    console.log(`[Decompress] Decompressing: ${originalName}`);
+    const decompressed = await gunzip(buffer);
+    const newPath = filePath.replace(/\.gz$/, '');
+    await fs.writeFile(newPath, decompressed);
+    return newPath;
+  }
+  return filePath;
+}
+
 router.post('/', upload.array('images', 200), async (req, res) => {
   const tempFiles = [];
   const outputDir = path.join(__dirname, '../../outputs');
@@ -27,6 +48,7 @@ router.post('/', upload.array('images', 200), async (req, res) => {
       return res.status(400).json({ error: 'Se requieren imágenes' });
     }
 
+    const isCompressed = req.body.compressed === 'true';
     const files = req.files;
     tempFiles.push(...files.map(f => f.path));
 
@@ -54,18 +76,22 @@ router.post('/', upload.array('images', 200), async (req, res) => {
       const file = files[i];
       const rotation = rotations[i] || 0;
       
-      let imagePath = file.path;
+      // Descomprimir si es necesario
+      let imagePath = await decompressFileIfNeeded(file.path, file.originalname, isCompressed);
+      if (imagePath !== file.path) {
+        tempFiles.push(imagePath);
+      }
 
       if (rotation !== 0) {
-        const ext = file.originalname.split('.').pop().toLowerCase();
-        const rotatedPath = file.path + '-rotated.' + ext;
-        await execAsync('convert "' + file.path + '" -rotate ' + rotation + ' "' + rotatedPath + '"');
+        const ext = file.originalname.replace(/\.gz$/, '').split('.').pop().toLowerCase();
+        const rotatedPath = imagePath + '-rotated.' + ext;
+        await execAsync('convert "' + imagePath + '" -rotate ' + rotation + ' "' + rotatedPath + '"');
         tempFiles.push(rotatedPath);
         imagePath = rotatedPath;
       }
 
       if (quality === 'compressed') {
-        const compressedPath = file.path + '-compressed.jpg';
+        const compressedPath = imagePath + '-compressed.jpg';
         await execAsync('convert "' + imagePath + '" -quality 80 "' + compressedPath + '"');
         tempFiles.push(compressedPath);
         imagePath = compressedPath;
@@ -142,11 +168,20 @@ router.post('/', upload.array('images', 200), async (req, res) => {
     await fs.access(outputPath);
     tempFiles.push(outputPath);
 
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', 'attachment; filename="images-to-pdf.pdf"');
-    
-    res.sendFile(outputPath, async function(err) {
-      await cleanupFiles(tempFiles);
+    const pdfBuffer = await fs.readFile(outputPath);
+    const fileId = await fileStore.storeFile(
+      pdfBuffer,
+      'images-to-pdf.pdf',
+      'application/pdf'
+    );
+
+    await cleanupFiles(tempFiles);
+
+    res.json({
+      success: true,
+      fileId,
+      fileName: 'images-to-pdf.pdf',
+      size: pdfBuffer.length
     });
 
   } catch (error) {
@@ -168,7 +203,7 @@ router.get('/info', function(req, res) {
     qualities: ['original', 'compressed'],
     limits: {
       maxImages: 200,
-      maxFileSize: '50MB per image',
+      maxFileSize: '100MB per image',
     }
   });
 });

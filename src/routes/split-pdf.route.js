@@ -3,9 +3,22 @@ const router = express.Router();
 const upload = require('../middleware/upload.middleware');
 const { validatePdf } = require('../middleware/pdf-validation.middleware');
 const { cleanupFiles } = require('../utils/cleanup.utils');
+const fileStore = require('../services/file-store.service');
 const { PDFDocument } = require('pdf-lib');
 const JSZip = require('jszip');
 const fs = require('fs').promises;
+const zlib = require('zlib');
+const { promisify } = require('util');
+
+const gunzip = promisify(zlib.gunzip);
+
+async function decompressIfNeeded(buffer, fileName) {
+  if (buffer[0] === 0x1f && buffer[1] === 0x8b) {
+    console.log(`[Decompress] Decompressing: ${fileName}`);
+    return await gunzip(buffer);
+  }
+  return buffer;
+}
 
 router.post('/', upload.single('file'), validatePdf, async (req, res) => {
   const tempFiles = req.file ? [req.file.path] : [];
@@ -16,9 +29,15 @@ router.post('/', upload.single('file'), validatePdf, async (req, res) => {
       return res.status(400).json({ error: 'Faltan archivo o modo' });
     }
 
+    const isCompressed = req.body.compressed === 'true';
     const mode = req.body.mode;
     const config = JSON.parse(req.body.config || '{}');
-    const fileBuffer = await fs.readFile(req.file.path);
+    
+    let fileBuffer = await fs.readFile(req.file.path);
+    if (isCompressed || req.file.originalname.endsWith('.gz')) {
+      fileBuffer = await decompressIfNeeded(fileBuffer, req.file.originalname);
+    }
+    
     const sourcePdf = await PDFDocument.load(fileBuffer);
     const totalPages = sourcePdf.getPageCount();
 
@@ -102,11 +121,20 @@ router.post('/', upload.single('file'), validatePdf, async (req, res) => {
 
     if (outputs.length === 1) {
       const pdfBytes = await outputs[0].pdf.save();
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', 'attachment; filename="' + outputs[0].name + '"');
-      return res.send(Buffer.from(pdfBytes));
+      const fileId = await fileStore.storeFile(
+        Buffer.from(pdfBytes),
+        outputs[0].name,
+        'application/pdf'
+      );
+      return res.json({
+        success: true,
+        fileId,
+        fileName: outputs[0].name,
+        size: pdfBytes.byteLength
+      });
     }
 
+    // Múltiples archivos - crear ZIP
     const zip = new JSZip();
     for (const output of outputs) {
       const pdfBytes = await output.pdf.save();
@@ -114,9 +142,19 @@ router.post('/', upload.single('file'), validatePdf, async (req, res) => {
     }
 
     const zipBuffer = await zip.generateAsync({ type: 'nodebuffer' });
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', 'attachment; filename="split-files.zip"');
-    res.send(zipBuffer);
+    const fileId = await fileStore.storeFile(
+      zipBuffer,
+      'split-files.zip',
+      'application/zip'
+    );
+
+    res.json({
+      success: true,
+      fileId,
+      fileName: 'split-files.zip',
+      size: zipBuffer.length,
+      filesCount: outputs.length
+    });
 
   } catch (error) {
     console.error('Error splitting PDF:', error);

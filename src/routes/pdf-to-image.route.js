@@ -4,18 +4,43 @@ const upload = require('../middleware/upload.middleware');
 const { validatePdf } = require('../middleware/pdf-validation.middleware');
 const { execAsync } = require('../utils/file.utils');
 const { cleanupFiles } = require('../utils/cleanup.utils');
+const fileStore = require('../services/file-store.service');
 const path = require('path');
 const fs = require('fs').promises;
 const archiver = require('archiver');
+const zlib = require('zlib');
+const { promisify } = require('util');
+
+const gunzip = promisify(zlib.gunzip);
+
+async function decompressIfNeeded(buffer, fileName) {
+  if (buffer[0] === 0x1f && buffer[1] === 0x8b) {
+    console.log(`[Decompress] Decompressing: ${fileName}`);
+    return await gunzip(buffer);
+  }
+  return buffer;
+}
 
 router.post('/', upload.single('file'), validatePdf, async (req, res) => {
-  const inputPath = req.file?.path;
+  const tempFiles = req.file ? [req.file.path] : [];
   const outputDir = path.join(__dirname, '../../outputs');
-  const tempFiles = inputPath ? [inputPath] : [];
   
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'Archivo PDF requerido' });
+    }
+
+    const isCompressed = req.body.compressed === 'true';
+    let inputPath = req.file.path;
+
+    if (isCompressed || req.file.originalname.endsWith('.gz')) {
+      const buffer = await fs.readFile(req.file.path);
+      const decompressed = await decompressIfNeeded(buffer, req.file.originalname);
+      if (decompressed !== buffer) {
+        inputPath = req.file.path + '.pdf';
+        await fs.writeFile(inputPath, decompressed);
+        tempFiles.push(inputPath);
+      }
     }
     
     const format = req.body.format || 'jpg';
@@ -138,49 +163,72 @@ router.post('/', upload.single('file'), validatePdf, async (req, res) => {
     outputFiles.sort((a, b) => a.pageNum - b.pageNum);
     tempFiles.push(...outputFiles.map(f => f.path));
     
+    // Una sola imagen
     if (outputFiles.length === 1) {
+      const imageBuffer = await fs.readFile(outputFiles[0].path);
       const mimeTypes = {
         jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
         webp: 'image/webp', tiff: 'image/tiff', bmp: 'image/bmp'
       };
       
-      res.setHeader('Content-Type', mimeTypes[format] || 'application/octet-stream');
-      return res.sendFile(outputFiles[0].path, async () => {
-        await cleanupFiles(tempFiles);
+      const fileId = await fileStore.storeFile(
+        imageBuffer,
+        outputFiles[0].filename,
+        mimeTypes[format] || 'application/octet-stream'
+      );
+
+      await cleanupFiles(tempFiles);
+
+      return res.json({
+        success: true,
+        fileId,
+        fileName: outputFiles[0].filename,
+        size: imageBuffer.length
       });
     }
     
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', 'attachment; filename="pdf-images.zip"');
+    // Múltiples imágenes - crear ZIP en memoria
+    const zipPath = path.join(outputDir, 'pdf-images-' + timestamp + '.zip');
     
-    const archive = archiver('zip', { zlib: { level: 5 } });
-    
-    archive.on('error', async (err) => {
-      console.error('Error ZIP:', err);
-      await cleanupFiles(tempFiles);
-      if (!res.headersSent) {
-        res.status(500).json({ error: 'Error creando ZIP' });
+    await new Promise((resolve, reject) => {
+      const output = require('fs').createWriteStream(zipPath);
+      const archive = archiver('zip', { zlib: { level: 5 } });
+      
+      output.on('close', resolve);
+      archive.on('error', reject);
+      
+      archive.pipe(output);
+      
+      for (const file of outputFiles) {
+        archive.file(file.path, { name: file.filename });
       }
+      
+      archive.finalize();
     });
+
+    tempFiles.push(zipPath);
     
-    archive.on('end', async () => {
-      await cleanupFiles(tempFiles);
+    const zipBuffer = await fs.readFile(zipPath);
+    const fileId = await fileStore.storeFile(
+      zipBuffer,
+      'pdf-images.zip',
+      'application/zip'
+    );
+
+    await cleanupFiles(tempFiles);
+
+    res.json({
+      success: true,
+      fileId,
+      fileName: 'pdf-images.zip',
+      size: zipBuffer.length,
+      imagesCount: outputFiles.length
     });
-    
-    archive.pipe(res);
-    
-    for (const file of outputFiles) {
-      archive.file(file.path, { name: file.filename });
-    }
-    
-    await archive.finalize();
     
   } catch (error) {
     console.error('Error PDF→Image:', error);
     await cleanupFiles(tempFiles);
-    if (!res.headersSent) {
-      res.status(500).json({ error: 'Error al convertir', details: error.message });
-    }
+    res.status(500).json({ error: 'Error al convertir', details: error.message });
   }
 });
 

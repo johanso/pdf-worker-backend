@@ -3,8 +3,21 @@ const router = express.Router();
 const upload = require('../middleware/upload.middleware');
 const { validatePdf } = require('../middleware/pdf-validation.middleware');
 const { cleanupFiles } = require('../utils/cleanup.utils');
+const fileStore = require('../services/file-store.service');
 const { PDFDocument, degrees } = require('pdf-lib');
 const fs = require('fs').promises;
+const zlib = require('zlib');
+const { promisify } = require('util');
+
+const gunzip = promisify(zlib.gunzip);
+
+async function decompressIfNeeded(buffer, fileName) {
+  if (buffer[0] === 0x1f && buffer[1] === 0x8b) {
+    console.log(`[Decompress] Decompressing: ${fileName}`);
+    return await gunzip(buffer);
+  }
+  return buffer;
+}
 
 router.post('/', upload.single('file'), validatePdf, async (req, res) => {
   const tempFiles = req.file ? [req.file.path] : [];
@@ -15,8 +28,14 @@ router.post('/', upload.single('file'), validatePdf, async (req, res) => {
       return res.status(400).json({ error: 'Faltan archivo o instrucciones' });
     }
 
+    const isCompressed = req.body.compressed === 'true';
     const pageInstructions = JSON.parse(req.body.pageInstructions);
-    const fileBuffer = await fs.readFile(req.file.path);
+    
+    let fileBuffer = await fs.readFile(req.file.path);
+    if (isCompressed || req.file.originalname.endsWith('.gz')) {
+      fileBuffer = await decompressIfNeeded(fileBuffer, req.file.originalname);
+    }
+    
     const pdfDoc = await PDFDocument.load(fileBuffer);
     const newPdf = await PDFDocument.create();
 
@@ -41,9 +60,19 @@ router.post('/', upload.single('file'), validatePdf, async (req, res) => {
     const pdfBytes = await newPdf.save();
     await cleanupFiles(tempFiles);
 
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', 'attachment; filename="rotated.pdf"');
-    res.send(Buffer.from(pdfBytes));
+    const fileId = await fileStore.storeFile(
+      Buffer.from(pdfBytes),
+      'rotated.pdf',
+      'application/pdf'
+    );
+
+    res.json({
+      success: true,
+      fileId,
+      fileName: 'rotated.pdf',
+      size: pdfBytes.byteLength,
+      pages: newPdf.getPageCount()
+    });
 
   } catch (error) {
     console.error('Error rotating PDF:', error);

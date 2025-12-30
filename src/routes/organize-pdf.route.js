@@ -3,14 +3,28 @@ const router = express.Router();
 const upload = require('../middleware/upload.middleware');
 const { validatePdf } = require('../middleware/pdf-validation.middleware');
 const { cleanupFiles } = require('../utils/cleanup.utils');
+const fileStore = require('../services/file-store.service');
 const { PDFDocument, degrees } = require('pdf-lib');
 const fs = require('fs').promises;
+const zlib = require('zlib');
+const { promisify } = require('util');
+
+const gunzip = promisify(zlib.gunzip);
+
+async function decompressIfNeeded(buffer, fileName) {
+  if (buffer[0] === 0x1f && buffer[1] === 0x8b) {
+    console.log(`[Decompress] Decompressing: ${fileName}`);
+    return await gunzip(buffer);
+  }
+  return buffer;
+}
 
 router.post('/', upload.any(), validatePdf, async (req, res) => {
   const tempFiles = req.files ? req.files.map(f => f.path) : [];
   
   try {
     const instructionsJson = req.body.instructions;
+    const isCompressed = req.body.compressed === 'true';
 
     if (!instructionsJson) {
       await cleanupFiles(tempFiles);
@@ -24,7 +38,10 @@ router.post('/', upload.any(), validatePdf, async (req, res) => {
       if (file.fieldname.startsWith('file-')) {
         const index = parseInt(file.fieldname.replace('file-', ''));
         if (!isNaN(index)) {
-          const buffer = await fs.readFile(file.path);
+          let buffer = await fs.readFile(file.path);
+          if (isCompressed || file.originalname.endsWith('.gz')) {
+            buffer = await decompressIfNeeded(buffer, file.originalname);
+          }
           filesMap.set(index, buffer);
         }
       }
@@ -32,7 +49,10 @@ router.post('/', upload.any(), validatePdf, async (req, res) => {
 
     if (filesMap.size === 0) {
       for (let i = 0; i < req.files.length; i++) {
-        const buffer = await fs.readFile(req.files[i].path);
+        let buffer = await fs.readFile(req.files[i].path);
+        if (isCompressed || req.files[i].originalname.endsWith('.gz')) {
+          buffer = await decompressIfNeeded(buffer, req.files[i].originalname);
+        }
         filesMap.set(i, buffer);
       }
     }
@@ -78,9 +98,19 @@ router.post('/', upload.any(), validatePdf, async (req, res) => {
     const pdfBytes = await newPdf.save();
     await cleanupFiles(tempFiles);
 
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', 'attachment; filename="organized.pdf"');
-    res.send(Buffer.from(pdfBytes));
+    const fileId = await fileStore.storeFile(
+      Buffer.from(pdfBytes),
+      'organized.pdf',
+      'application/pdf'
+    );
+
+    res.json({
+      success: true,
+      fileId,
+      fileName: 'organized.pdf',
+      size: pdfBytes.byteLength,
+      pages: newPdf.getPageCount()
+    });
 
   } catch (error) {
     console.error('Error organizing PDF:', error);
