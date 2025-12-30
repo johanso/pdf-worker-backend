@@ -3,7 +3,9 @@ const router = express.Router();
 const upload = require('../middleware/upload.middleware');
 const playwrightService = require('../services/playwright.service');
 const { cleanupFiles } = require('../utils/cleanup.utils');
+const fileStore = require('../services/file-store.service');
 const path = require('path');
+const fs = require('fs').promises;
 
 router.post('/', upload.single('file'), async (req, res) => {
   let inputPath;
@@ -66,10 +68,21 @@ router.post('/', upload.single('file'), async (req, res) => {
     
     const outputPath = await playwrightService.htmlToPdf(inputPath, outputDir, options);
     tempFiles.push(outputPath);
-    
-    res.download(outputPath, path.basename(outputPath), async (err) => {
-      if (err) console.error('Error enviando archivo:', err);
-      await cleanupFiles(tempFiles);
+
+    const pdfBuffer = await fs.readFile(outputPath);
+    const fileId = await fileStore.storeFile(
+      pdfBuffer,
+      'webpage.pdf',
+      'application/pdf'
+    );
+
+    await cleanupFiles(tempFiles);
+
+    res.json({
+      success: true,
+      fileId,
+      fileName: 'webpage.pdf',
+      size: pdfBuffer.length
     });
     
   } catch (error) {
