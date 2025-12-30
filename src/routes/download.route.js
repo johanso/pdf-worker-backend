@@ -19,7 +19,7 @@ router.get('/:fileId', async (req, res) => {
   }
   
   res.setHeader('Content-Type', file.mimeType);
-  res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(file.fileName)}"`);
+  res.setHeader('Content-Disposition', 'inline');
   
   res.sendFile(file.path, async (err) => {
     if (err) {
