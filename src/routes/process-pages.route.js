@@ -19,8 +19,7 @@ async function decompressIfNeeded(buffer, fileName) {
   return buffer;
 }
 
-router.post('/', upload.single('file'), validatePdf, async (req, res) => {
-  const tempFiles = req.file ? [req.file.path] : [];
+router.post('/', upload.single('file'), async (req, res) => {  const tempFiles = req.file ? [req.file.path] : [];
   
   try {
     if (!req.file || !req.body.pageInstructions) {
