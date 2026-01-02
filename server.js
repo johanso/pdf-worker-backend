@@ -18,7 +18,9 @@ app.get('/health', (req, res) => {
       libreoffice: 'available',
       ghostscript: 'available',
       imagemagick: 'available',
-      qpdf: 'available'
+      qpdf: 'available',
+      tesseract: 'available',
+      playwright: 'available'
     }
   });
 });
@@ -53,8 +55,11 @@ app.use('/api/image-to-pdf', require('./src/routes/image-to-pdf.route'));
 app.use('/api/protect-pdf', require('./src/routes/protect-pdf.route'));
 app.use('/api/unlock-pdf', require('./src/routes/unlock-pdf.route'));
 
-// ===== HTML TO PDF =====
+// ===== HTML TO PDF (PLAYWRIGHT) =====
 app.use('/api/html-to-pdf', require('./src/routes/html-to-pdf.route'));
+
+// ===== OCR PDF (TESSERACT) =====
+app.use('/api/ocr-pdf', require('./src/routes/ocr-pdf.route'));
 
 // ===== MANEJO DE ERRORES =====
 app.use(require('./src/middleware/error.middleware'));
@@ -64,6 +69,12 @@ const { autoCleanup } = require('./src/utils/cleanup.utils');
 setInterval(autoCleanup, 60 * 60 * 1000);
 
 app.listen(PORT, () => {
-  console.log(`🚀 PDF Worker running on port ${PORT}`);
-  console.log(`📍 Download endpoint: GET /api/download/:fileId`);
+  console.log(`PDF Worker running on port ${PORT}`);
+  console.log(`Endpoints disponibles:`);
+  console.log(` - GET  /health`);
+  console.log(` - GET  /api/download/:fileId`);
+  console.log(` - POST /api/ocr-pdf`);
+  console.log(` - POST /api/ocr-pdf/detect`);
+  console.log(` - GET  /api/ocr-pdf/languages`);
+  console.log(` - GET  /api/ocr-pdf/health`);
 });

@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const upload = require('../middleware/upload.middleware');
-const { validatePdf } = require('../middleware/pdf-validation.middleware');
 const { execAsync } = require('../utils/file.utils');
 const { cleanupFiles } = require('../utils/cleanup.utils');
 const fileStore = require('../services/file-store.service');
