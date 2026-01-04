@@ -1,48 +1,35 @@
-const { execAsync } = require('../utils/file.utils');
+const { exec } = require('child_process');
+const { promisify } = require('util');
 const path = require('path');
 const fs = require('fs').promises;
+const crypto = require('crypto');
+
+const execAsync = promisify(exec);
 
 class OcrService {
   constructor() {
-    // Idiomas soportados por Tesseract
-    this.supportedLanguages = {
-      'spa': 'Español',
-      'eng': 'English',
-      'fra': 'Français',
-      'deu': 'Deutsch',
-      'ita': 'Italiano',
-      'por': 'Português',
-      'cat': 'Català',
-      'nld': 'Nederlands',
-      'pol': 'Polski',
-      'rus': 'Русский',
-      'chi_sim': '简体中文',
-      'chi_tra': '繁體中文',
-      'jpn': '日本語',
-      'kor': '한국어',
-      'ara': 'العربية'
-    };
+    this.outputDir = path.join(__dirname, '../../outputs');
   }
 
   /**
-   * Detecta si un PDF necesita OCR (es escaneado/imagen)
-   * @param {string} inputPath - Ruta al PDF
-   * @returns {Promise<{needsOcr: boolean, textContent: number, imageContent: number}>}
+   * Detecta si un PDF necesita OCR
    */
   async detectPdfType(inputPath) {
     try {
-      // Extraer texto existente con pdftotext
-      const textResult = await execAsync(`pdftotext -q "${inputPath}" - | wc -w`);
-      const wordCount = parseInt(textResult.stdout.trim()) || 0;
+      // Usar ocrmypdf --skip-text para detectar si ya tiene texto
+      const { stdout } = await execAsync(
+        `pdftotext -q "${inputPath}" - | wc -w`
+      );
+      const wordCount = parseInt(stdout.trim()) || 0;
 
       // Contar páginas
-      const pageResult = await execAsync(`pdfinfo "${inputPath}" | grep "Pages:" | awk '{print $2}'`);
-      const pageCount = parseInt(pageResult.stdout.trim()) || 1;
-
-      // Ratio de palabras por página
+      const { stdout: pageInfo } = await execAsync(
+        `pdfinfo "${inputPath}" 2>/dev/null | grep "Pages:" | awk '{print $2}'`
+      );
+      const pageCount = parseInt(pageInfo.trim()) || 1;
       const wordsPerPage = wordCount / pageCount;
 
-      // Si tiene menos de 50 palabras por página, probablemente es escaneado
+      // Menos de 50 palabras por página = probablemente escaneado
       const needsOcr = wordsPerPage < 50;
 
       return {
@@ -54,229 +41,172 @@ class OcrService {
       };
     } catch (error) {
       console.error('[OCR] Error detecting PDF type:', error.message);
-      // En caso de error, asumir que necesita OCR
       return { needsOcr: true, wordCount: 0, pageCount: 1, wordsPerPage: 0, type: 'unknown' };
     }
   }
 
   /**
-   * Realiza OCR en un PDF y genera un PDF searchable
-   * @param {string} inputPath - Ruta al PDF de entrada
-   * @param {string} outputDir - Directorio de salida
-   * @param {Object} options - Opciones de OCR
-   * @returns {Promise<string>} - Ruta al PDF con OCR
+   * Aplica OCR usando ocrmypdf (MUCHO más rápido que tesseract directo)
    */
   async ocrPdf(inputPath, outputDir, options = {}) {
     const {
-      languages = ['spa', 'eng'],  // Idiomas para reconocimiento
-      dpi = 300,                    // Resolución para conversión
-      optimize = true,              // Optimizar tamaño del resultado
-      mode = 'sandwich'             // 'sandwich' (texto invisible) o 'replace' (solo texto)
+      languages = ['spa', 'eng'],
+      dpi = 300,
+      optimize = true,
+      skipText = true  // No re-procesar páginas que ya tienen texto
     } = options;
 
+    await fs.mkdir(outputDir, { recursive: true });
+
     const timestamp = Date.now();
-    const tempDir = path.join(outputDir, `ocr-temp-${timestamp}`);
-    const filename = path.basename(inputPath, '.pdf');
-    const outputPath = path.join(outputDir, `${filename}-ocr-${timestamp}.pdf`);
+    const randomId = crypto.randomBytes(4).toString('hex');
+    const outputPath = path.join(outputDir, `ocr-${timestamp}-${randomId}.pdf`);
 
     try {
-      // 1. Validar idiomas instalados
+      // Validar idiomas instalados
       const installedLangs = await this.getInstalledLanguages();
       const validLanguages = languages.filter(lang => installedLangs.includes(lang));
       
       if (validLanguages.length === 0) {
-        throw new Error(`Ninguno de los idiomas solicitados está instalado: ${languages.join(', ')}`);
-      }
-      
-      if (validLanguages.length < languages.length) {
-        const missing = languages.filter(l => !validLanguages.includes(l));
-        console.warn(`[OCR] Idiomas no disponibles (ignorados): ${missing.join(', ')}`);
+        validLanguages.push('eng');
       }
 
-      // 2. Crear directorio temporal
-      await fs.mkdir(tempDir, { recursive: true });
+      // Contar páginas para el log
+      const { stdout: pageInfo } = await execAsync(
+        `pdfinfo "${inputPath}" 2>/dev/null | grep "Pages:" | awk '{print $2}'`
+      );
+      const pageCount = parseInt(pageInfo.trim()) || 1;
 
-      // 3. Obtener número de páginas y validar límite
-      const pageResult = await execAsync(`pdfinfo "${inputPath}" | grep "Pages:" | awk '{print $2}'`);
-      const pageCount = parseInt(pageResult.stdout.trim()) || 1;
+      console.log(`[OCR] Starting ocrmypdf: ${pageCount} pages, languages: ${validLanguages.join('+')}, dpi: ${dpi}`);
 
-      const MAX_PAGES = 100;
-      if (pageCount > MAX_PAGES) {
-        throw new Error(`El PDF tiene ${pageCount} páginas. Máximo permitido: ${MAX_PAGES}`);
-      }
-
-      console.log(`[OCR] Processing ${pageCount} pages with languages: ${validLanguages.join('+')}`);
-
-      // 4. Convertir PDF a imágenes de alta resolución
-      console.log(`[OCR] Converting PDF to images at ${dpi} DPI...`);
-      await execAsync(`pdftoppm -png -r ${dpi} "${inputPath}" "${tempDir}/page"`);
-
-      // 5. Obtener lista de imágenes generadas
-      const files = await fs.readdir(tempDir);
-      const imageFiles = files
-        .filter(f => f.startsWith('page') && f.endsWith('.png'))
-        .sort();
-
-      if (imageFiles.length === 0) {
-        throw new Error('No se pudieron extraer imágenes del PDF');
-      }
-
-      console.log(`[OCR] Extracted ${imageFiles.length} images`);
-
-      // 6. Procesar cada imagen con Tesseract
+      // Construir comando ocrmypdf
+      // --jobs 2: usa 2 CPUs en paralelo
+      // --skip-text: no re-OCR páginas que ya tienen texto (más rápido)
+      // --optimize 1-3: nivel de optimización (1=rápido, 3=máximo)
+      // --fast-web-view: optimiza para visualización web
+      // --deskew: endereza páginas torcidas
       const langParam = validLanguages.join('+');
-      const ocrPages = [];
-
-      for (let i = 0; i < imageFiles.length; i++) {
-        const imgPath = path.join(tempDir, imageFiles[i]);
-        const pageNum = i + 1;
-        const pagePdfPath = path.join(tempDir, `ocr-page-${String(pageNum).padStart(4, '0')}`);
-
-        console.log(`[OCR] Processing page ${pageNum}/${imageFiles.length}...`);
-
-        // Tesseract genera PDF con texto invisible superpuesto
-        await execAsync(`tesseract "${imgPath}" "${pagePdfPath}" -l ${langParam} --dpi ${dpi} --psm 1 pdf`);
-
-        ocrPages.push(`${pagePdfPath}.pdf`);
-      }
-
-      // 7. Unir todas las páginas OCR en un solo PDF
-      console.log('[OCR] Merging OCR pages...');
+      const optimizeLevel = optimize ? 2 : 0;
+      const skipTextFlag = skipText ? '--skip-text' : '--force-ocr';
       
-      if (ocrPages.length === 1) {
-        await fs.copyFile(ocrPages[0], outputPath);
-      } else {
-        const pagesList = ocrPages.map(p => `"${p}"`).join(' ');
-        await execAsync(`pdfunite ${pagesList} "${outputPath}"`);
-      }
+      const cmd = [
+        'ocrmypdf',
+        `--jobs 2`,                    // Usar 2 CPUs
+        `--language ${langParam}`,     // Idiomas
+        `--image-dpi ${dpi}`,          // DPI para imágenes sin metadata
+        `--optimize ${optimizeLevel}`, // Nivel de optimización
+        skipTextFlag,                  // Skip o force OCR
+        '--deskew',                    // Enderezar páginas
+        '--clean',                     // Limpiar imágenes antes de OCR
+        '--quiet',                     // Menos output
+        `"${inputPath}"`,
+        `"${outputPath}"`
+      ].join(' ');
 
-      // 8. Optimizar el PDF resultante (opcional)
-      if (optimize) {
-        console.log('[OCR] Optimizing output...');
-        const optimizedPath = path.join(outputDir, `${filename}-ocr-optimized-${timestamp}.pdf`);
-        
-        try {
-          await execAsync(
-            `gs -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dPDFSETTINGS=/ebook ` +
-            `-dNOPAUSE -dQUIET -dBATCH -sOutputFile="${optimizedPath}" "${outputPath}"`
-          );
-          
-          // Verificar que la optimización fue exitosa
-          const originalSize = (await fs.stat(outputPath)).size;
-          const optimizedSize = (await fs.stat(optimizedPath)).size;
-          
-          if (optimizedSize < originalSize && optimizedSize > 0) {
-            await fs.unlink(outputPath);
-            await fs.rename(optimizedPath, outputPath);
-            console.log(`[OCR] Optimized: ${Math.round(originalSize/1024)}KB -> ${Math.round(optimizedSize/1024)}KB`);
-          } else {
-            await fs.unlink(optimizedPath).catch(() => {});
-          }
-        } catch (e) {
-          console.log('[OCR] Optimization skipped:', e.message);
-        }
-      }
+      console.log(`[OCR] Command: ${cmd}`);
 
-      // 9. Limpiar archivos temporales
-      await this.cleanupDir(tempDir);
+      const startTime = Date.now();
+      await execAsync(cmd, { timeout: 600000 }); // 10 min timeout
+      const duration = ((Date.now() - startTime) / 1000).toFixed(1);
 
-      // 10. Verificar resultado
+      // Verificar que se creó el archivo
       await fs.access(outputPath);
       const stats = await fs.stat(outputPath);
 
-      console.log(`[OCR] Complete: ${outputPath} (${Math.round(stats.size/1024)}KB)`);
+      console.log(`[OCR] Complete in ${duration}s: ${outputPath} (${Math.round(stats.size/1024)}KB)`);
 
       return outputPath;
 
     } catch (error) {
-      // Limpiar en caso de error
-      await this.cleanupDir(tempDir);
-      throw error;
+      // Limpiar archivo de salida si existe
+      try {
+        await fs.unlink(outputPath);
+      } catch (e) {}
+
+      // Parsear errores comunes de ocrmypdf
+      const errorMsg = error.message || error.stderr || 'Error desconocido';
+      
+      if (errorMsg.includes('PriorOcrFoundError')) {
+        throw new Error('Este PDF ya tiene texto OCR. Usa --force-ocr para re-procesar.');
+      }
+      if (errorMsg.includes('EncryptedPdfError')) {
+        throw new Error('El PDF está encriptado. Desbloquéalo primero.');
+      }
+      if (errorMsg.includes('InputFileError')) {
+        throw new Error('El archivo PDF está corrupto o no es válido.');
+      }
+      
+      console.error('[OCR] Error:', errorMsg);
+      throw new Error(`Error en OCR: ${errorMsg.substring(0, 200)}`);
     }
   }
 
   /**
-   * OCR rápido: extrae solo el texto (sin generar PDF)
-   * @param {string} inputPath - Ruta al PDF
-   * @param {Object} options - Opciones
-   * @returns {Promise<{text: string, pages: Array}>}
+   * Extrae solo el texto (sin generar PDF)
    */
   async extractText(inputPath, outputDir, options = {}) {
-    const {
-      languages = ['spa', 'eng'],
-      dpi = 200  // Menor DPI para solo texto
-    } = options;
-
-    const timestamp = Date.now();
-    const tempDir = path.join(outputDir, `ocr-text-${timestamp}`);
+    const { languages = ['spa', 'eng'] } = options;
 
     try {
-      await fs.mkdir(tempDir, { recursive: true });
+      // Primero intentar extraer texto existente
+      const { stdout: existingText } = await execAsync(
+        `pdftotext -q "${inputPath}" -`
+      );
 
-      // Convertir a imágenes
-      await execAsync(`pdftoppm -png -r ${dpi} "${inputPath}" "${tempDir}/page"`);
-
-      const files = await fs.readdir(tempDir);
-      const imageFiles = files.filter(f => f.endsWith('.png')).sort();
-
-      const langParam = languages.join('+');
-      const pages = [];
-      let fullText = '';
-
-      for (let i = 0; i < imageFiles.length; i++) {
-        const imgPath = path.join(tempDir, imageFiles[i]);
-        
-        const result = await execAsync(`
-          tesseract "${imgPath}" stdout -l ${langParam} --psm 1
-        `);
-
-        const pageText = result.stdout.trim();
-        pages.push({
-          page: i + 1,
-          text: pageText,
-          wordCount: pageText.split(/\s+/).filter(w => w.length > 0).length
-        });
-
-        fullText += pageText + '\n\n';
+      if (existingText.trim().length > 100) {
+        return {
+          text: existingText.trim(),
+          source: 'existing',
+          pageCount: 1
+        };
       }
 
-      await this.cleanupDir(tempDir);
+      // Si no hay texto, usar OCR
+      const langParam = languages.join('+');
+      const { stdout } = await execAsync(
+        `ocrmypdf --sidecar /dev/stdout --language ${langParam} --skip-text "${inputPath}" - 2>/dev/null || true`
+      );
 
       return {
-        text: fullText.trim(),
-        pages,
-        totalWords: pages.reduce((sum, p) => sum + p.wordCount, 0)
+        text: stdout.trim(),
+        source: 'ocr',
+        languages
       };
 
     } catch (error) {
-      await this.cleanupDir(tempDir);
-      throw error;
+      console.error('[OCR] Extract text error:', error.message);
+      throw new Error('Error al extraer texto');
     }
   }
 
   /**
-   * Obtiene los idiomas instalados en Tesseract
+   * Lista idiomas instalados en Tesseract
    */
   async getInstalledLanguages() {
     try {
-      const result = await execAsync('tesseract --list-langs 2>&1');
-      const lines = result.stdout.split('\n').slice(1); // Ignorar primera línea
-      return lines.filter(l => l.trim().length > 0);
+      const { stdout } = await execAsync('tesseract --list-langs 2>&1');
+      const lines = stdout.split('\n').slice(1);
+      return lines.map(l => l.trim()).filter(l => l.length > 0 && l !== 'osd');
     } catch (error) {
-      return ['eng', 'spa']; // Fallback
+      return ['eng', 'spa'];
     }
   }
 
   /**
-   * Verifica que las dependencias estén instaladas
+   * Verifica dependencias
    */
   async checkDependencies() {
     const deps = {
+      ocrmypdf: false,
       tesseract: false,
-      pdftoppm: false,
-      pdfunite: false,
-      ghostscript: false
+      ghostscript: false,
+      pdftotext: false
     };
+
+    try {
+      await execAsync('ocrmypdf --version');
+      deps.ocrmypdf = true;
+    } catch (e) {}
 
     try {
       await execAsync('tesseract --version');
@@ -284,36 +214,16 @@ class OcrService {
     } catch (e) {}
 
     try {
-      await execAsync('pdftoppm -v 2>&1');
-      deps.pdftoppm = true;
-    } catch (e) {}
-
-    try {
-      await execAsync('pdfunite -v 2>&1');
-      deps.pdfunite = true;
-    } catch (e) {}
-
-    try {
       await execAsync('gs --version');
       deps.ghostscript = true;
     } catch (e) {}
 
-    return deps;
-  }
-
-  /**
-   * Limpia un directorio temporal
-   */
-  async cleanupDir(dirPath) {
     try {
-      const files = await fs.readdir(dirPath);
-      for (const file of files) {
-        await fs.unlink(path.join(dirPath, file)).catch(() => {});
-      }
-      await fs.rmdir(dirPath).catch(() => {});
-    } catch (e) {
-      // Ignorar errores de limpieza
-    }
+      await execAsync('pdftotext -v 2>&1');
+      deps.pdftotext = true;
+    } catch (e) {}
+
+    return deps;
   }
 }
 
