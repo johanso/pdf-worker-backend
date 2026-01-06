@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs').promises;
 
 class GhostscriptService {
-
+  
   /**
    * Convierte un PDF a escala de grises con control de contraste
    * 
@@ -19,24 +19,51 @@ class GhostscriptService {
     const timestamp = Date.now();
     const outputPath = path.join(outputDir, `${filename}-grayscale-${timestamp}.pdf`);
     
-    // Configuración de contraste usando transferencias de función
-    // Ghostscript usa curvas de transferencia para ajustar tonos
-    const contrastSettings = this.getContrastSettings(contrast);
-    
-    // Comando base para escala de grises
-    let cmd = `gs -sDEVICE=pdfwrite \
-      -dCompatibilityLevel=1.4 \
-      -dNOPAUSE -dQUIET -dBATCH \
-      -dColorConversionStrategy=/Gray \
-      -dProcessColorModel=/DeviceGray \
-      ${contrastSettings} \
-      -sOutputFile="${outputPath}" \
-      "${inputPath}"`;
-
     console.log(`[Grayscale] Converting with contrast: ${contrast}`);
     const startTime = Date.now();
-    
-    await execAsync(cmd);
+
+    if (contrast === 'normal') {
+      // Conversión simple a escala de grises
+      const cmd = `gs -sDEVICE=pdfwrite \
+        -dCompatibilityLevel=1.4 \
+        -dNOPAUSE -dQUIET -dBATCH \
+        -dColorConversionStrategy=/Gray \
+        -dProcessColorModel=/DeviceGray \
+        -sOutputFile="${outputPath}" \
+        "${inputPath}"`;
+      
+      await execAsync(cmd);
+    } else {
+      // Para otros niveles de contraste, usamos un proceso de dos pasos:
+      // 1. Convertir a grises con Ghostscript
+      // 2. Ajustar contraste con ImageMagick
+      
+      const tempGray = path.join(outputDir, `${filename}-temp-gray-${timestamp}.pdf`);
+      
+      // Paso 1: Convertir a escala de grises
+      const gsCmd = `gs -sDEVICE=pdfwrite \
+        -dCompatibilityLevel=1.4 \
+        -dNOPAUSE -dQUIET -dBATCH \
+        -dColorConversionStrategy=/Gray \
+        -dProcessColorModel=/DeviceGray \
+        -sOutputFile="${tempGray}" \
+        "${inputPath}"`;
+      
+      await execAsync(gsCmd);
+      
+      // Paso 2: Ajustar contraste con ImageMagick
+      const contrastParams = {
+        'light': '-brightness-contrast 15x-10',      // Más brillo, menos contraste
+        'high': '-brightness-contrast -5x30',        // Menos brillo, más contraste
+        'extreme': '-brightness-contrast -10x50 -normalize'  // Máximo contraste
+      };
+      
+      const imCmd = `convert -density 150 "${tempGray}" ${contrastParams[contrast]} "${outputPath}"`;
+      await execAsync(imCmd);
+      
+      // Limpiar archivo temporal
+      await fs.unlink(tempGray).catch(() => {});
+    }
     
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     console.log(`[Grayscale] Completed in ${elapsed}s`);
@@ -47,28 +74,29 @@ class GhostscriptService {
 
   /**
    * Obtiene los parámetros de Ghostscript para cada nivel de contraste
+   * Retorna objeto con preProcess (antes del input) y postProcess (después)
    */
   getContrastSettings(contrast) {
+    // Usamos -dConvertCMYKImagesToRGB y ajustes de gamma mediante render intent
     switch (contrast) {
       case 'light':
-        // Más claro: aumenta los valores de gris (gamma > 1 aclara)
-        return '-dDefaultGrayProfile=/usr/share/ghostscript/*/iccprofiles/gray.icc -c "{0.7 exp} settransfer" -f';
+        // Más claro: gamma 1.4 aclara los tonos
+        return { gamma: 1.4 };
       
       case 'high':
-        // Alto contraste: oscurece los tonos medios (gamma < 1)
-        return '-c "{0.6 exp} settransfer" -f';
+        // Alto contraste: gamma 0.7 oscurece medios
+        return { gamma: 0.7 };
       
       case 'extreme':
-        // Máximo contraste: casi umbralización, blanco y negro puro
-        return '-c "{dup 0.5 lt {0.3 mul} {0.7 mul 0.3 add} ifelse} settransfer" -f';
+        // Máximo contraste: gamma muy bajo
+        return { gamma: 0.5 };
       
       case 'normal':
       default:
-        // Normal: sin ajustes de contraste
-        return '';
+        return { gamma: 1.0 };
     }
   }
-  
+
   /**
    * Presets de compresión simplificados (sin estimaciones falsas)
    */
