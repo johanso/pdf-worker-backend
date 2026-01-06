@@ -58,6 +58,7 @@ app.use('/api/image-to-pdf', require('./src/routes/image-to-pdf.route'));
 // ===== RUTAS QPDF =====
 app.use('/api/protect-pdf', require('./src/routes/protect-pdf.route'));
 app.use('/api/unlock-pdf', require('./src/routes/unlock-pdf.route'));
+app.use('/api/repair-pdf', require('./src/routes/repair-pdf.route'));
 
 // ===== HTML TO PDF (PLAYWRIGHT) =====
 app.use('/api/html-to-pdf', require('./src/routes/html-to-pdf.route'));
