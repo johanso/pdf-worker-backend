@@ -40,6 +40,9 @@ app.use('/api/pdf-to-ppt', require('./src/routes/pdf-to-ppt.route'));
 app.use('/api/compress-pdf', require('./src/routes/compress-pdf.route'));
 app.use('/api/grayscale-pdf', require('./src/routes/grayscale-pdf.route'));
 
+// ===== RUTAS GHOSTSCRIPT AND PDFTK =====
+app.use('/api/flatten-pdf', require('./src/routes/flatten-pdf.route'));
+
 // ===== RUTAS PDF-LIB =====
 app.use('/api/merge-pdf', require('./src/routes/merge-pdf.route'));
 app.use('/api/organize-pdf', require('./src/routes/organize-pdf.route'));
