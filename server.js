@@ -38,6 +38,7 @@ app.use('/api/pdf-to-ppt', require('./src/routes/pdf-to-ppt.route'));
 
 // ===== RUTAS GHOSTSCRIPT =====
 app.use('/api/compress-pdf', require('./src/routes/compress-pdf.route'));
+app.use('/api/grayscale-pdf', require('./src/routes/grayscale-pdf.route'));
 
 // ===== RUTAS PDF-LIB =====
 app.use('/api/merge-pdf', require('./src/routes/merge-pdf.route'));
