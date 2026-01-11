@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const upload = require('../middleware/upload.middleware');
-const { validatePdf } = require('../middleware/pdf-validation.middleware');
 const { cleanupFiles } = require('../utils/cleanup.utils');
 const fileStore = require('../services/file-store.service');
 const { PDFDocument } = require('pdf-lib');
@@ -130,7 +129,10 @@ router.post('/', upload.single('file'), async (req, res) => {
         success: true,
         fileId,
         fileName: outputs[0].name,
-        size: pdfBytes.byteLength
+        size: pdfBytes.byteLength,
+        outputFiles: 1,
+        totalPages: totalPages,
+        mode: mode 
       });
     }
 
@@ -142,18 +144,22 @@ router.post('/', upload.single('file'), async (req, res) => {
     }
 
     const zipBuffer = await zip.generateAsync({ type: 'nodebuffer' });
+    const outputFileName = req.body.fileName || 'split-files.zip';
+
     const fileId = await fileStore.storeFile(
       zipBuffer,
-      'split-files.zip',
+      outputFileName,
       'application/zip'
     );
 
     res.json({
       success: true,
       fileId,
-      fileName: 'split-files.zip',
+      fileName: outputFileName,
       size: zipBuffer.length,
-      filesCount: outputs.length
+      outputFiles: outputs.length,
+      totalPages: totalPages,
+      mode: mode 
     });
 
   } catch (error) {
