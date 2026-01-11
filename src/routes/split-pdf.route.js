@@ -19,9 +19,8 @@ async function decompressIfNeeded(buffer, fileName) {
   return buffer;
 }
 
-router.post('/', upload.single('file'), async (req, res) => {  
+router.post('/', upload.single('file'), async (req, res) => {
   const tempFiles = req.file ? [req.file.path] : [];
-  const outputFileName = req.body.fileName || 'archivo_modificado.pdf';
   
   try {
     if (!req.file || !req.body.mode) {
@@ -86,7 +85,7 @@ router.post('/', upload.single('file'), async (req, res) => {
 
       if (config.merge) {
         const newPdf = await createDocFromIndices(selectedPages);
-        const baseName = outputFileName.replace(/\.(pdf|zip)$/, '');
+        const baseName = (req.body.fileName || 'archivo_modificado').replace(/\.(pdf|zip)$/, '');
         outputs.push({ name: baseName + '.pdf', pdf: newPdf });
       } else {
         for (const pageIndex of selectedPages) {
@@ -150,7 +149,7 @@ router.post('/', upload.single('file'), async (req, res) => {
     }
 
     const zipBuffer = await zip.generateAsync({ type: 'nodebuffer' });
-    const outputFileName = req.body.fileName || 'split-files.zip';
+    const outputFileName = req.body.fileName || 'archivos_modificado.zip';
 
     const fileId = await fileStore.storeFile(
       zipBuffer,
