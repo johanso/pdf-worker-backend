@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const upload = require('../middleware/upload.middleware');
-const { validatePdf } = require('../middleware/pdf-validation.middleware');
 const { cleanupFiles } = require('../utils/cleanup.utils');
 const fileStore = require('../services/file-store.service');
 const { PDFDocument, degrees } = require('pdf-lib');
@@ -19,7 +18,8 @@ async function decompressIfNeeded(buffer, fileName) {
   return buffer;
 }
 
-router.post('/', upload.single('file'), async (req, res) => {  const tempFiles = req.file ? [req.file.path] : [];
+router.post('/', upload.single('file'), async (req, res) => {
+  const tempFiles = req.file ? [req.file.path] : [];
   
   try {
     if (!req.file || !req.body.pageInstructions) {
@@ -29,6 +29,7 @@ router.post('/', upload.single('file'), async (req, res) => {  const tempFiles =
 
     const isCompressed = req.body.compressed === 'true';
     const pageInstructions = JSON.parse(req.body.pageInstructions);
+    const outputFileName = req.body.fileName || 'rotated.pdf';
     
     let fileBuffer = await fs.readFile(req.file.path);
     if (isCompressed || req.file.originalname.endsWith('.gz')) {
@@ -61,16 +62,19 @@ router.post('/', upload.single('file'), async (req, res) => {  const tempFiles =
 
     const fileId = await fileStore.storeFile(
       Buffer.from(pdfBytes),
-      'rotated.pdf',
+      outputFileName,
       'application/pdf'
     );
 
     res.json({
       success: true,
       fileId,
-      fileName: 'rotated.pdf',
+      fileName: outputFileName,
       size: pdfBytes.byteLength,
-      pages: newPdf.getPageCount()
+      pages: newPdf.getPageCount(),
+      resultSize: pdfBytes.byteLength,
+      rotatedPages: pageInstructions.filter(p => (p.rotation % 360) !== 0).length,
+      totalPages: newPdf.getPageCount()
     });
 
   } catch (error) {
