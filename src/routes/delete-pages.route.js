@@ -51,18 +51,23 @@ router.post('/', upload.single('file'), async (req, res) => {  const tempFiles =
     const pdfBytes = await newDoc.save();
     await cleanupFiles(tempFiles);
 
+    const outputFileName = req.body.fileName || 'archivo_modificado.pdf';
+
     const fileId = await fileStore.storeFile(
       Buffer.from(pdfBytes),
-      'modified.pdf',
+      outputFileName,
       'application/pdf'
     );
 
     res.json({
       success: true,
       fileId,
-      fileName: 'modified.pdf',
+      fileName: outputFileName,
       size: pdfBytes.byteLength,
-      pages: newDoc.getPageCount()
+      pages: newDoc.getPageCount(),
+      resultSize: pdfBytes.byteLength,
+      remainingPages: newDoc.getPageCount(),
+      totalOriginalPages: srcDoc.getPageCount() 
     });
 
   } catch (error) {

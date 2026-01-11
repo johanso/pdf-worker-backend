@@ -21,6 +21,7 @@ async function decompressIfNeeded(buffer, fileName) {
 
 router.post('/', upload.single('file'), async (req, res) => {  
   const tempFiles = req.file ? [req.file.path] : [];
+  const outputFileName = req.body.fileName || 'archivo_modificado.pdf';
   
   try {
     if (!req.file || !req.body.mode) {
@@ -39,6 +40,7 @@ router.post('/', upload.single('file'), async (req, res) => {
     
     const sourcePdf = await PDFDocument.load(fileBuffer);
     const totalPages = sourcePdf.getPageCount();
+    
 
     const outputs = [];
 
@@ -84,12 +86,13 @@ router.post('/', upload.single('file'), async (req, res) => {
 
       if (config.merge) {
         const newPdf = await createDocFromIndices(selectedPages);
-        outputs.push({ name: 'extracted-pages.pdf', pdf: newPdf });
+        const baseName = outputFileName.replace(/\.(pdf|zip)$/, '');
+        outputs.push({ name: baseName + '.pdf', pdf: newPdf });
       } else {
         for (const pageIndex of selectedPages) {
           if (pageIndex >= 0 && pageIndex < totalPages) {
             const newPdf = await createDocFromIndices([pageIndex]);
-            outputs.push({ name: 'page-' + (pageIndex + 1) + '.pdf', pdf: newPdf });
+            outputs.push({ name: 'archivo-' + (pageIndex + 1) + '.pdf', pdf: newPdf });
           }
         }
       }
@@ -120,18 +123,21 @@ router.post('/', upload.single('file'), async (req, res) => {
 
     if (outputs.length === 1) {
       const pdfBytes = await outputs[0].pdf.save();
+      const finalFileName = outputs[0].name;
+
       const fileId = await fileStore.storeFile(
         Buffer.from(pdfBytes),
-        outputs[0].name,
+        finalFileName,
         'application/pdf'
       );
       return res.json({
         success: true,
         fileId,
-        fileName: outputs[0].name,
+        fileName: finalFileName,
         size: pdfBytes.byteLength,
         outputFiles: 1,
         totalPages: totalPages,
+        resultSize: pdfBytes.byteLength,
         mode: mode 
       });
     }
