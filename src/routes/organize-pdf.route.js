@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const upload = require('../middleware/upload.middleware');
-const { validatePdf } = require('../middleware/pdf-validation.middleware');
 const { cleanupFiles } = require('../utils/cleanup.utils');
 const fileStore = require('../services/file-store.service');
 const { PDFDocument, degrees } = require('pdf-lib');
@@ -25,6 +24,7 @@ router.post('/', upload.any(), async (req, res) => {
   try {
     const instructionsJson = req.body.instructions;
     const isCompressed = req.body.compressed === 'true';
+    const outputFileName = req.body.fileName || 'organized.pdf';
 
     if (!instructionsJson) {
       await cleanupFiles(tempFiles);
@@ -32,6 +32,15 @@ router.post('/', upload.any(), async (req, res) => {
     }
 
     const instructions = JSON.parse(instructionsJson);
+    
+    // Validación: límite de páginas totales
+    if (instructions.length > 1000) {
+      await cleanupFiles(tempFiles);
+      return res.status(400).json({ 
+        error: 'El documento no puede tener más de 1000 páginas' 
+      });
+    }
+
     const filesMap = new Map();
 
     for (const file of req.files) {
@@ -100,16 +109,28 @@ router.post('/', upload.any(), async (req, res) => {
 
     const fileId = await fileStore.storeFile(
       Buffer.from(pdfBytes),
-      'organized.pdf',
+      outputFileName,
       'application/pdf'
     );
+
+    // Calcular métricas
+    const blankPagesCount = instructions.filter(inst => inst.isBlank).length;
+    const uniqueFilesUsed = new Set(
+      instructions
+        .filter(inst => !inst.isBlank)
+        .map(inst => inst.fileIndex)
+    ).size;
 
     res.json({
       success: true,
       fileId,
-      fileName: 'organized.pdf',
+      fileName: outputFileName,
       size: pdfBytes.byteLength,
-      pages: newPdf.getPageCount()
+      pages: newPdf.getPageCount(),
+      resultSize: pdfBytes.byteLength,
+      totalPages: newPdf.getPageCount(),
+      blankPages: blankPagesCount,
+      filesUsed: uniqueFilesUsed
     });
 
   } catch (error) {
