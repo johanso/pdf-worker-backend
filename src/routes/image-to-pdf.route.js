@@ -66,6 +66,7 @@ router.post('/', upload.array('images', 200), async (req, res) => {
       }
     }
 
+    const outputFileName = req.body.fileName || 'images-to-pdf.pdf';
     const marginPx = MARGINS[margin] || MARGINS.small;
     const timestamp = Date.now();
     const outputPath = path.join(outputDir, 'images-' + timestamp + '.pdf');
@@ -171,7 +172,7 @@ router.post('/', upload.array('images', 200), async (req, res) => {
     const pdfBuffer = await fs.readFile(outputPath);
     const fileId = await fileStore.storeFile(
       pdfBuffer,
-      'images-to-pdf.pdf',
+      outputFileName,
       'application/pdf'
     );
 
@@ -180,8 +181,10 @@ router.post('/', upload.array('images', 200), async (req, res) => {
     res.json({
       success: true,
       fileId,
-      fileName: 'images-to-pdf.pdf',
-      size: pdfBuffer.length
+      fileName: outputFileName,
+      size: pdfBuffer.length,
+      resultSize: pdfBuffer.length,
+      totalImages: files.length
     });
 
   } catch (error) {
