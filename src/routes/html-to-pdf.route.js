@@ -10,6 +10,7 @@ const fs = require('fs').promises;
 router.post('/', upload.single('file'), async (req, res) => {
   let inputPath;
   const outputDir = path.join(__dirname, '../../outputs');
+  const outputFileName = req.body.fileName || 'webpage.pdf';
   const tempFiles = [];
   
   try {
@@ -63,16 +64,14 @@ router.post('/', upload.single('file'), async (req, res) => {
       viewport: viewport,
       margin: margin
     };
-    
-    console.log('[Route] Opciones finales:', JSON.stringify(options, null, 2));
-    
+        
     const outputPath = await playwrightService.htmlToPdf(inputPath, outputDir, options);
     tempFiles.push(outputPath);
 
     const pdfBuffer = await fs.readFile(outputPath);
     const fileId = await fileStore.storeFile(
       pdfBuffer,
-      'webpage.pdf',
+      outputFileName,
       'application/pdf'
     );
 
@@ -81,8 +80,11 @@ router.post('/', upload.single('file'), async (req, res) => {
     res.json({
       success: true,
       fileId,
-      fileName: 'webpage.pdf',
-      size: pdfBuffer.length
+      fileName: outputFileName,
+      size: pdfBuffer.length,
+      resultSize: pdfBuffer.length,
+      sourceType: isUrl ? 'url' : 'file',
+      viewport: viewport
     });
     
   } catch (error) {
