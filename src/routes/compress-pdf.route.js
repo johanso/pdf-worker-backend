@@ -64,7 +64,6 @@ router.post('/', upload.single('file'), async (req, res) => {
       const dpi = parseInt(req.body.dpi) || 120;
       const imageQuality = parseInt(req.body.imageQuality) || 60;
       
-      console.log(`[Compress] Advanced - DPI: ${dpi}, Quality: ${imageQuality}`);
       outputPath = await ghostscriptService.compressPdf(inputPath, outputDir, {
         dpi,
         imageQuality,
@@ -72,7 +71,6 @@ router.post('/', upload.single('file'), async (req, res) => {
       });
     } else {
       const preset = req.body.preset || req.body.quality || 'recommended';
-      console.log(`[Compress] Preset: ${preset}`);
       outputPath = await ghostscriptService.compressPdfWithPreset(inputPath, outputDir, preset);
     }
 
@@ -85,7 +83,7 @@ router.post('/', upload.single('file'), async (req, res) => {
 
     // Guardar en file store
     const pdfBuffer = await fs.readFile(outputPath);
-    const outputFileName = originalName.replace(/\.pdf$/i, '-compressed.pdf');
+    const outputFileName = req.body.fileName || originalName.replace(/\.pdf$/i, '-compressed.pdf');
     
     const fileId = await fileStore.storeFile(
       pdfBuffer,
@@ -94,8 +92,6 @@ router.post('/', upload.single('file'), async (req, res) => {
     );
 
     await cleanupFiles(tempFiles);
-
-    console.log(`[Compress] ${(originalSize/1024/1024).toFixed(1)}MB -> ${(compressedSize/1024/1024).toFixed(1)}MB (${reduction.toFixed(1)}%)`);
 
     res.json({
       success: true,
