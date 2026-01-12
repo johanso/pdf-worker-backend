@@ -51,7 +51,8 @@ router.post('/', upload.single('file'), async (req, res) => {  const tempFiles =
       await cleanupFiles(tempFiles);
       return res.status(400).json({ error: 'Formato no soportado: ' + format });
     }
-    
+
+    const outputFileName = req.body.fileName || 'pdf-images';
     const validDpi = [72, 150, 300, 600];
     const finalDpi = validDpi.includes(dpi) ? dpi : 150;
     
@@ -168,10 +169,12 @@ router.post('/', upload.single('file'), async (req, res) => {  const tempFiles =
         jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
         webp: 'image/webp', tiff: 'image/tiff', bmp: 'image/bmp'
       };
+
+      const finalFileName = `${outputFileName}.${ext}`; 
       
       const fileId = await fileStore.storeFile(
         imageBuffer,
-        outputFiles[0].filename,
+        finalFileName,
         mimeTypes[format] || 'application/octet-stream'
       );
 
@@ -180,8 +183,9 @@ router.post('/', upload.single('file'), async (req, res) => {  const tempFiles =
       return res.json({
         success: true,
         fileId,
-        fileName: outputFiles[0].filename,
-        size: imageBuffer.length
+        fileName: finalFileName,
+        size: imageBuffer.length,
+        resultSize: imageBuffer.length,
       });
     }
     
@@ -207,9 +211,12 @@ router.post('/', upload.single('file'), async (req, res) => {  const tempFiles =
     tempFiles.push(zipPath);
     
     const zipBuffer = await fs.readFile(zipPath);
+
+    const finalZipName = `${outputFileName}.zip`;
+
     const fileId = await fileStore.storeFile(
       zipBuffer,
-      'pdf-images.zip',
+      finalZipName,
       'application/zip'
     );
 
@@ -218,8 +225,9 @@ router.post('/', upload.single('file'), async (req, res) => {  const tempFiles =
     res.json({
       success: true,
       fileId,
-      fileName: 'pdf-images.zip',
+      fileName: finalZipName,
       size: zipBuffer.length,
+      resultSize: zipBuffer.length,
       imagesCount: outputFiles.length
     });
     
