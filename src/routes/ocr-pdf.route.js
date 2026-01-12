@@ -97,7 +97,7 @@ router.post('/', upload.any(), async (req, res) => {
 
     // Leer resultado y almacenar
     const pdfBuffer = await fs.readFile(outputPath);
-    const outputFileName = originalName.replace(/\.pdf$/i, '-ocr.pdf');
+    const outputFileName = req.body.fileName || originalName.replace(/\.pdf$/i, '-ocr.pdf');
     
     const fileId = await fileStore.storeFile(
       pdfBuffer,
@@ -107,13 +107,12 @@ router.post('/', upload.any(), async (req, res) => {
 
     await cleanupFiles(tempFiles);
 
-    console.log(`[OCR Route] Success: ${outputFileName} (${pdfBuffer.length} bytes)`);
-
     res.json({
       success: true,
       fileId,
       fileName: outputFileName,
       size: pdfBuffer.length,
+      resultSize: pdfBuffer.length,
       languages,
       dpi
     });
