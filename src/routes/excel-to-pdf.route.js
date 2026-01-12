@@ -25,6 +25,8 @@ router.post('/', upload.single('file'), async (req, res) => {
   
   try {
     const originalName = req.file.originalname.replace(/\.gz$/, '');
+    const outputFileName = req.body.fileName || originalName.replace(/\.(xlsx|xls)$/i, '.pdf');
+
     if (!originalName.match(/\.(xlsx|xls)$/i)) {
       await cleanupFiles(tempFiles);
       return res.status(400).json({ error: 'Solo archivos .xlsx o .xls' });
@@ -50,7 +52,7 @@ router.post('/', upload.single('file'), async (req, res) => {
     const pdfBuffer = await fs.readFile(outputPath);
     const fileId = await fileStore.storeFile(
       pdfBuffer,
-      originalName.replace(/\.(xlsx|xls)$/i, '.pdf'),
+      outputFileName,
       'application/pdf'
     );
 
@@ -59,8 +61,10 @@ router.post('/', upload.single('file'), async (req, res) => {
     res.json({
       success: true,
       fileId,
-      fileName: originalName.replace(/\.(xlsx|xls)$/i, '.pdf'),
-      size: pdfBuffer.length
+      fileName: outputFileName,
+      size: pdfBuffer.length,
+      resultSize: pdfBuffer.length,
+      originalFormat: originalName.split('.').pop().toUpperCase() 
     });
     
   } catch (error) {
