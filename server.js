@@ -35,6 +35,7 @@ app.use('/api/excel-to-pdf', require('./src/routes/excel-to-pdf.route'));
 app.use('/api/pdf-to-excel', require('./src/routes/pdf-to-excel.route'));
 app.use('/api/ppt-to-pdf', require('./src/routes/ppt-to-pdf.route'));
 app.use('/api/pdf-to-ppt', require('./src/routes/pdf-to-ppt.route'));
+app.use('/api/preview/office', require('./src/routes/preview-office.route'));
 
 // ===== RUTAS GHOSTSCRIPT =====
 app.use('/api/compress-pdf', require('./src/routes/compress-pdf.route'));

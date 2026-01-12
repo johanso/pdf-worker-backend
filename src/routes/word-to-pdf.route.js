@@ -22,6 +22,7 @@ async function decompressIfNeeded(buffer, fileName) {
 router.post('/', upload.single('file'), async (req, res) => {
   const tempFiles = req.file ? [req.file.path] : [];
   const outputDir = path.join(__dirname, '../../outputs');
+  const outputFileName = req.body.fileName || originalName.replace(/\.(docx|doc)$/i, '.pdf');
   
   try {
     const originalName = req.file.originalname.replace(/\.gz$/, '');
@@ -52,7 +53,7 @@ router.post('/', upload.single('file'), async (req, res) => {
     const pdfBuffer = await fs.readFile(outputPath);
     const fileId = await fileStore.storeFile(
       pdfBuffer,
-      originalName.replace(/\.(docx|doc)$/i, '.pdf'),
+      outputFileName,
       'application/pdf'
     );
 
@@ -61,8 +62,10 @@ router.post('/', upload.single('file'), async (req, res) => {
     res.json({
       success: true,
       fileId,
-      fileName: originalName.replace(/\.(docx|doc)$/i, '.pdf'),
-      size: pdfBuffer.length
+      fileName: outputFileName,
+      size: pdfBuffer.length,
+      resultSize: pdfBuffer.length,
+      originalFormat: originalName.split('.').pop().toUpperCase()
     });
     
   } catch (error) {
