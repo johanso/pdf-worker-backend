@@ -106,7 +106,7 @@ router.post('/', upload.single('file'), async (req, res) => {
 
     // Guardar en file store
     const pdfBuffer = await fs.readFile(outputPath);
-    const outputFileName = originalName.replace(/\.pdf$/i, '-protected.pdf');
+    const outputFileName = req.body.fileName || originalName.replace(/\.pdf$/i, '-protected.pdf');
     
     const fileId = await fileStore.storeFile(
       pdfBuffer,
@@ -115,8 +115,6 @@ router.post('/', upload.single('file'), async (req, res) => {
     );
 
     await cleanupFiles(tempFiles);
-
-    console.log(`[Protect] Complete: ${outputFileName} (${(resultSize/1024/1024).toFixed(2)}MB)`);
 
     res.json({
       success: true,
