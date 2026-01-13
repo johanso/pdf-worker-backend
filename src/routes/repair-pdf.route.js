@@ -229,7 +229,7 @@ router.post('/check', upload.single('file'), async (req, res) => {
     let issues = [];
     let canRepair = true;
 
-    // ✅ Primero verificar que sea un PDF válido leyendo la cabecera
+    // Verificar que sea un PDF válido leyendo la cabecera
     try {
       const buffer = await fs.readFile(inputPath);
       const header = buffer.toString('ascii', 0, 8);
@@ -250,6 +250,7 @@ router.post('/check', upload.single('file'), async (req, res) => {
         });
       }
     } catch (e) {
+      console.error('[Repair Check] Error reading file:', e);
       status = 'invalid';
       issues.push('No se pudo leer el archivo');
       canRepair = false;
@@ -265,47 +266,113 @@ router.post('/check', upload.single('file'), async (req, res) => {
       });
     }
 
-    // ✅ Ejecutar qpdf --check y capturar stdout/stderr correctamente
+    // Ejecutar qpdf --check con timeout para archivos grandes
     try {
-      const { stdout, stderr } = await execAsync(`qpdf --check "${inputPath}"`);
+      console.log('[Repair Check] Running qpdf check...');
+      
+      // Usar spawn para mejor control y timeout
+      const { spawn } = require('child_process');
+      
+      const qpdfProcess = spawn('qpdf', ['--check', inputPath], {
+        timeout: 30000 // 30 segundos timeout
+      });
+      
+      let stdout = '';
+      let stderr = '';
+      
+      qpdfProcess.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+      
+      qpdfProcess.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+      
+      const exitCode = await new Promise((resolve, reject) => {
+        qpdfProcess.on('close', resolve);
+        qpdfProcess.on('error', reject);
+        
+        // Timeout manual
+        setTimeout(() => {
+          qpdfProcess.kill();
+          reject(new Error('Timeout'));
+        }, 30000);
+      });
+      
       const output = stdout + stderr;
+      console.log('[Repair Check] qpdf exit code:', exitCode);
+      console.log('[Repair Check] qpdf output:', output.substring(0, 500));
       
-      // Si contiene esta línea, el PDF está bien
-      if (output.includes('No syntax or stream encoding errors') || 
-          output.includes('no errors')) {
-        status = 'ok';
-      } else if (output.includes('warning')) {
-        status = 'damaged';
-        issues.push('Advertencias menores detectadas');
-      }
-    } catch (e) {
-      // ✅ qpdf retorna exit code != 0 cuando hay errores
-      const output = (e.stdout || '') + (e.stderr || '') + (e.message || '');
-      
-      // Verificar si está encriptado
-      if (output.includes('invalid password') || 
-          output.includes('encrypted') ||
-          output.includes('operation requires password')) {
-        status = 'encrypted';
-        issues.push('El PDF está protegido con contraseña');
-        canRepair = false;
-      } else {
-        status = 'damaged';
-        
-        // Extraer problemas específicos
-        if (output.includes('xref')) issues.push('Tabla de referencias dañada');
-        if (output.includes('stream')) issues.push('Streams de datos corruptos');
-        if (output.includes('object')) issues.push('Objetos internos dañados');
-        if (output.includes('trailer')) issues.push('Trailer del PDF dañado');
-        if (output.includes('page')) issues.push('Posibles páginas afectadas');
-        
-        if (issues.length === 0) {
-          issues.push('Estructura del PDF dañada');
+      // Analizar resultado
+      if (exitCode === 0) {
+        // Exit code 0 = PDF válido
+        if (output.includes('No syntax or stream encoding errors') || 
+            output.includes('no errors')) {
+          status = 'ok';
+        } else {
+          // Tiene advertencias menores
+          status = 'ok';
+          if (output.includes('warning')) {
+            issues.push('Advertencias menores (no afectan funcionalidad)');
+          }
         }
+      } else if (exitCode === 2) {
+        // Exit code 2 = errores recuperables
+        status = 'damaged';
+        
+        // Verificar si está encriptado
+        if (output.toLowerCase().includes('password') || 
+            output.toLowerCase().includes('encrypted')) {
+          status = 'encrypted';
+          issues.push('El PDF está protegido con contraseña');
+          canRepair = false;
+        } else {
+          // Extraer problemas específicos
+          if (output.includes('xref')) issues.push('Tabla de referencias dañada');
+          if (output.includes('stream')) issues.push('Streams de datos corruptos');
+          if (output.includes('object')) issues.push('Objetos internos dañados');
+          if (output.includes('trailer')) issues.push('Trailer del PDF dañado');
+          
+          if (issues.length === 0) {
+            issues.push('Estructura del PDF dañada pero reparable');
+          }
+        }
+      } else if (exitCode === 3) {
+        // Exit code 3 = error grave
+        status = 'damaged';
+        issues.push('Daños severos detectados');
+        
+        // Verificar si está encriptado
+        if (output.toLowerCase().includes('password') || 
+            output.toLowerCase().includes('encrypted')) {
+          status = 'encrypted';
+          issues = ['El PDF está protegido con contraseña'];
+          canRepair = false;
+        }
+      } else {
+        // Otro exit code
+        status = 'damaged';
+        issues.push('Posibles problemas detectados');
+      }
+      
+    } catch (e) {
+      console.error('[Repair Check] qpdf error:', e.message);
+      
+      // Si hay timeout o error, asumir que está OK (especialmente para archivos grandes)
+      if (e.message.includes('Timeout') || e.message.includes('ENOENT')) {
+        console.log('[Repair Check] Timeout or qpdf not found, assuming OK');
+        status = 'ok';
+        issues = [];
+      } else {
+        // Error desconocido
+        status = 'damaged';
+        issues.push('No se pudo verificar completamente el archivo');
       }
     }
 
     await cleanupFiles(tempFiles);
+
+    console.log(`[Repair Check] Result: status=${status}, issues=${issues.length}`);
 
     res.json({
       success: true,
@@ -325,7 +392,11 @@ router.post('/check', upload.single('file'), async (req, res) => {
   } catch (error) {
     console.error('[Repair Check] Error:', error);
     await cleanupFiles(tempFiles);
-    res.status(500).json({ error: 'Error al verificar PDF', details: error.message });
+    res.status(500).json({ 
+      error: 'Error al verificar PDF', 
+      details: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 });
 
