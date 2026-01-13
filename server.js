@@ -67,6 +67,9 @@ app.use('/api/html-to-pdf', require('./src/routes/html-to-pdf.route'));
 // ===== OCR PDF (TESSERACT) =====
 app.use('/api/ocr-pdf', require('./src/routes/ocr-pdf.route'));
 
+// ===== FIRMAR PDF (PDF-LIB + OPENSSL) =====
+app.use('/api/sign-pdf', require('./src/routes/sign-pdf.route'));
+
 // ===== MANEJO DE ERRORES =====
 app.use(require('./src/middleware/error.middleware'));
 
