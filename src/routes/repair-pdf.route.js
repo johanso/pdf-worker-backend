@@ -153,7 +153,7 @@ router.post('/', upload.single('file'), async (req, res) => {
 
     // Guardar en file store
     const pdfBuffer = await fs.readFile(outputPath);
-    const outputFileName = originalName.replace(/\.pdf$/i, '-repaired.pdf');
+    const outputFileName = req.body.fileName || originalName.replace(/\.pdf$/i, '-repaired.pdf');
     
     const fileId = await fileStore.storeFile(
       pdfBuffer,
@@ -229,22 +229,65 @@ router.post('/check', upload.single('file'), async (req, res) => {
     let issues = [];
     let canRepair = true;
 
+    // ✅ Primero verificar que sea un PDF válido leyendo la cabecera
     try {
-      const result = await execAsync(`qpdf --check "${inputPath}" 2>&1`);
-      // Si no hay error, el PDF está bien
-      if (result.stdout.includes('No syntax or stream encoding errors')) {
-        status = 'ok';
-      }
-    } catch (e) {
-      const output = e.stdout || e.stderr || e.message;
+      const buffer = await fs.readFile(inputPath);
+      const header = buffer.toString('ascii', 0, 8);
       
-      if (output.includes('invalid password') || output.includes('encrypted')) {
-        status = 'encrypted';
-        issues.push('El PDF está protegido con contraseña');
-        canRepair = false;
-      } else if (output.includes('not a PDF')) {
+      if (!header.startsWith('%PDF-')) {
         status = 'invalid';
         issues.push('El archivo no es un PDF válido');
+        canRepair = false;
+        
+        await cleanupFiles(tempFiles);
+        return res.json({
+          success: true,
+          fileName: originalName,
+          status,
+          issues,
+          canRepair,
+          recommendation: 'El archivo no es un PDF válido'
+        });
+      }
+    } catch (e) {
+      status = 'invalid';
+      issues.push('No se pudo leer el archivo');
+      canRepair = false;
+      
+      await cleanupFiles(tempFiles);
+      return res.json({
+        success: true,
+        fileName: originalName,
+        status,
+        issues,
+        canRepair,
+        recommendation: 'El archivo no es válido'
+      });
+    }
+
+    // ✅ Ejecutar qpdf --check y capturar stdout/stderr correctamente
+    try {
+      const { stdout, stderr } = await execAsync(`qpdf --check "${inputPath}"`);
+      const output = stdout + stderr;
+      
+      // Si contiene esta línea, el PDF está bien
+      if (output.includes('No syntax or stream encoding errors') || 
+          output.includes('no errors')) {
+        status = 'ok';
+      } else if (output.includes('warning')) {
+        status = 'damaged';
+        issues.push('Advertencias menores detectadas');
+      }
+    } catch (e) {
+      // ✅ qpdf retorna exit code != 0 cuando hay errores
+      const output = (e.stdout || '') + (e.stderr || '') + (e.message || '');
+      
+      // Verificar si está encriptado
+      if (output.includes('invalid password') || 
+          output.includes('encrypted') ||
+          output.includes('operation requires password')) {
+        status = 'encrypted';
+        issues.push('El PDF está protegido con contraseña');
         canRepair = false;
       } else {
         status = 'damaged';
