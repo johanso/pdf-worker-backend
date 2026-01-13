@@ -66,8 +66,6 @@ router.post('/', upload.single('file'), async (req, res) => {
     const validContrasts = ['light', 'normal', 'high', 'extreme'];
     const finalContrast = validContrasts.includes(contrast) ? contrast : 'normal';
 
-    console.log(`[Grayscale] Processing: ${originalName} (${(originalSize/1024/1024).toFixed(2)}MB) - Contrast: ${finalContrast}`);
-
     // Convertir a escala de grises con contraste
     const outputPath = await ghostscriptService.convertToGrayscale(inputPath, outputDir, {
       contrast: finalContrast
@@ -80,7 +78,7 @@ router.post('/', upload.single('file'), async (req, res) => {
 
     // Guardar en file store
     const pdfBuffer = await fs.readFile(outputPath);
-    const outputFileName = originalName.replace(/\.pdf$/i, '-grayscale.pdf');
+    const outputFileName = req.body.fileName || originalName.replace(/\.pdf$/i, '-grayscale.pdf');
     
     const fileId = await fileStore.storeFile(
       pdfBuffer,
@@ -89,8 +87,6 @@ router.post('/', upload.single('file'), async (req, res) => {
     );
 
     await cleanupFiles(tempFiles);
-
-    console.log(`[Grayscale] Complete: ${(originalSize/1024/1024).toFixed(2)}MB -> ${(resultSize/1024/1024).toFixed(2)}MB`);
 
     res.json({
       success: true,
