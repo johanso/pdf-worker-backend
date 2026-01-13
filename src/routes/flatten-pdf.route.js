@@ -69,7 +69,6 @@ router.post('/', upload.single('file'), async (req, res) => {
     const validModes = ['all', 'forms', 'annotations'];
     const finalMode = validModes.includes(mode) ? mode : 'all';
 
-    console.log(`[Flatten] Processing: ${originalName} - Mode: ${finalMode}, Compress: ${shouldCompress}`);
     const startTime = Date.now();
 
     const timestamp = Date.now();
@@ -132,7 +131,7 @@ router.post('/', upload.single('file'), async (req, res) => {
 
     // Guardar en file store
     const pdfBuffer = await fs.readFile(finalPath);
-    const outputFileName = originalName.replace(/\.pdf$/i, '-flattened.pdf');
+    const outputFileName = req.body.fileName || originalName.replace(/\.pdf$/i, '-flattened.pdf');
     
     const fileId = await fileStore.storeFile(
       pdfBuffer,
@@ -141,8 +140,6 @@ router.post('/', upload.single('file'), async (req, res) => {
     );
 
     await cleanupFiles(tempFiles);
-
-    console.log(`[Flatten] Complete: ${(originalSize/1024/1024).toFixed(2)}MB -> ${(resultSize/1024/1024).toFixed(2)}MB`);
 
     res.json({
       success: true,
