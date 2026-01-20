@@ -1,5 +1,6 @@
 const { PDFDocument } = require('pdf-lib');
 const fs = require('fs').promises;
+const { sanitizeFilename } = require('../utils/file.utils');
 
 /**
  * Middleware para validar PDFs
@@ -25,36 +26,36 @@ async function validatePdf(req, res, next) {
         
         // Verificar si tiene páginas válidas
         if (pdf.getPageCount() === 0) {
-          return res.status(400).json({ 
+          return res.status(400).json({
             error: 'El archivo PDF no contiene páginas',
             code: 'PDF_EMPTY',
-            fileName: file.originalname
+            fileName: sanitizeFilename(file.originalname)
           });
         }
-        
+
       } catch (error) {
         const errorMsg = error.message.toLowerCase();
-        
+
         // Detectar PDF encriptado
-        if (errorMsg.includes('encrypted') || 
+        if (errorMsg.includes('encrypted') ||
             errorMsg.includes('password') ||
             errorMsg.includes('decrypt')) {
-          return res.status(400).json({ 
+          return res.status(400).json({
             error: 'El archivo está protegido con contraseña. Usa la herramienta "Desbloquear PDF" primero.',
             code: 'PDF_ENCRYPTED',
-            fileName: file.originalname
+            fileName: sanitizeFilename(file.originalname)
           });
         }
-        
+
         // Detectar PDF corrupto
-        if (errorMsg.includes('invalid') || 
+        if (errorMsg.includes('invalid') ||
             errorMsg.includes('failed') ||
             errorMsg.includes('parse') ||
             errorMsg.includes('expected')) {
-          return res.status(400).json({ 
+          return res.status(400).json({
             error: 'El archivo PDF está corrupto o no es válido',
             code: 'PDF_INVALID',
-            fileName: file.originalname
+            fileName: sanitizeFilename(file.originalname)
           });
         }
         
