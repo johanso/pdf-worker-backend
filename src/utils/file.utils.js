@@ -25,7 +25,6 @@ async function execFileWithTimeout(command, args = [], options = {}) {
 
 /**
  * Ejecuta comando de shell con timeout (usar solo cuando sea absolutamente necesario)
- * ADVERTENCIA: Vulnerable a command injection si no se sanitizan los inputs
  * @param {string} command - Comando completo
  * @param {object} options - Opciones
  * @returns {Promise<{stdout: string, stderr: string}>}
