@@ -1,6 +1,7 @@
 node_modules/
 uploads/
 outputs/
+downloads/
 *.log
 .env
 *.pdf

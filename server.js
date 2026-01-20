@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs').promises;
 const {
   apiLimiter,
   uploadLimiter,
@@ -153,13 +154,47 @@ app.use(require('./src/middleware/error.middleware'));
 const { autoCleanup } = require('./src/utils/cleanup.utils');
 setInterval(autoCleanup, 60 * 60 * 1000);
 
-app.listen(PORT, () => {
-  console.log(`PDF Worker running on port ${PORT}`);
-  console.log(`Endpoints disponibles:`);
-  console.log(` - GET  /health`);
-  console.log(` - GET  /api/download/:fileId`);
-  console.log(` - POST /api/ocr-pdf`);
-  console.log(` - POST /api/ocr-pdf/detect`);
-  console.log(` - GET  /api/ocr-pdf/languages`);
-  console.log(` - GET  /api/ocr-pdf/health`);
+/**
+ * Asegura que existan los directorios necesarios al iniciar
+ * Previene errores si los directorios fueron eliminados o en deploys limpios
+ */
+async function ensureDirectories() {
+  const dirs = [
+    path.join(__dirname, 'uploads'),   // Archivos subidos por multer
+    path.join(__dirname, 'outputs'),   // Archivos procesados temporales
+    path.join(__dirname, 'downloads')  // Archivos listos para descarga (FileStore)
+  ];
+
+  for (const dir of dirs) {
+    try {
+      await fs.mkdir(dir, { recursive: true });
+      console.log(`[Setup] Directory ensured: ${path.basename(dir)}/`);
+    } catch (error) {
+      console.error(`[Setup] Error creating directory ${dir}:`, error.message);
+    }
+  }
+}
+
+// Iniciar servidor con verificación de directorios
+async function startServer() {
+  // Crear directorios necesarios
+  await ensureDirectories();
+
+  // Iniciar servidor
+  app.listen(PORT, () => {
+    console.log(`PDF Worker running on port ${PORT}`);
+    console.log(`Endpoints disponibles:`);
+    console.log(` - GET  /health`);
+    console.log(` - GET  /api/download/:fileId`);
+    console.log(` - POST /api/ocr-pdf`);
+    console.log(` - POST /api/ocr-pdf/detect`);
+    console.log(` - GET  /api/ocr-pdf/languages`);
+    console.log(` - GET  /api/ocr-pdf/health`);
+  });
+}
+
+// Iniciar
+startServer().catch(error => {
+  console.error('[Setup] Failed to start server:', error);
+  process.exit(1);
 });
