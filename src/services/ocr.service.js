@@ -1,10 +1,7 @@
-const { exec } = require('child_process');
-const { promisify } = require('util');
+const { execFileWithTimeout, execWithTimeout } = require('../utils/file.utils');
 const path = require('path');
 const fs = require('fs').promises;
 const crypto = require('crypto');
-
-const execAsync = promisify(exec);
 
 class OcrService {
   constructor() {
@@ -16,17 +13,22 @@ class OcrService {
    */
   async detectPdfType(inputPath) {
     try {
-      // Usar ocrmypdf --skip-text para detectar si ya tiene texto
-      const { stdout } = await execAsync(
-        `pdftotext -q "${inputPath}" - | wc -w`
-      );
-      const wordCount = parseInt(stdout.trim()) || 0;
+      // Extraer texto del PDF
+      const { stdout: text } = await execFileWithTimeout('pdftotext', [
+        '-q',
+        inputPath,
+        '-'
+      ]);
 
-      // Contar páginas
-      const { stdout: pageInfo } = await execAsync(
-        `pdfinfo "${inputPath}" 2>/dev/null | grep "Pages:" | awk '{print $2}'`
-      );
-      const pageCount = parseInt(pageInfo.trim()) || 1;
+      // Contar palabras en Node.js
+      const wordCount = text.trim().split(/\s+/).filter(w => w.length > 0).length;
+
+      // Obtener info del PDF
+      const { stdout: pageInfo } = await execFileWithTimeout('pdfinfo', [inputPath]);
+
+      // Parsear línea "Pages: N"
+      const pagesMatch = pageInfo.match(/Pages:\s+(\d+)/);
+      const pageCount = pagesMatch ? parseInt(pagesMatch[1]) : 1;
       const wordsPerPage = wordCount / pageCount;
 
       // Menos de 50 palabras por página = probablemente escaneado
@@ -72,14 +74,13 @@ class OcrService {
       }
 
       // Contar páginas para el log
-      const { stdout: pageInfo } = await execAsync(
-        `pdfinfo "${inputPath}" 2>/dev/null | grep "Pages:" | awk '{print $2}'`
-      );
-      const pageCount = parseInt(pageInfo.trim()) || 1;
+      const { stdout: pageInfo } = await execFileWithTimeout('pdfinfo', [inputPath]);
+      const pagesMatch = pageInfo.match(/Pages:\s+(\d+)/);
+      const pageCount = pagesMatch ? parseInt(pagesMatch[1]) : 1;
 
       console.log(`[OCR] Starting ocrmypdf: ${pageCount} pages, languages: ${validLanguages.join('+')}, dpi: ${dpi}`);
 
-      // Construir comando ocrmypdf
+      // Construir argumentos para ocrmypdf
       // --jobs 2: usa 2 CPUs en paralelo
       // --skip-text: no re-OCR páginas que ya tienen texto (más rápido)
       // --optimize 1-3: nivel de optimización (1=rápido, 3=máximo)
@@ -88,25 +89,24 @@ class OcrService {
       const langParam = validLanguages.join('+');
       const optimizeLevel = optimize ? 2 : 0;
       const skipTextFlag = skipText ? '--skip-text' : '--force-ocr';
-      
-      const cmd = [
-        'ocrmypdf',
-        `--jobs 2`,                    // Usar 2 CPUs
-        `--language ${langParam}`,     // Idiomas
-        `--image-dpi ${dpi}`,          // DPI para imágenes sin metadata
-        `--optimize ${optimizeLevel}`, // Nivel de optimización
-        skipTextFlag,                  // Skip o force OCR
-        '--deskew',                    // Enderezar páginas
-        '--clean',                     // Limpiar imágenes antes de OCR
-        '--quiet',                     // Menos output
-        `"${inputPath}"`,
-        `"${outputPath}"`
-      ].join(' ');
 
-      console.log(`[OCR] Command: ${cmd}`);
+      const args = [
+        '--jobs', '2',
+        '--language', langParam,
+        '--image-dpi', String(dpi),
+        '--optimize', String(optimizeLevel),
+        skipTextFlag,
+        '--deskew',
+        '--clean',
+        '--quiet',
+        inputPath,
+        outputPath
+      ];
+
+      console.log(`[OCR] Command: ocrmypdf ${args.join(' ')}`);
 
       const startTime = Date.now();
-      await execAsync(cmd, { timeout: 600000 }); // 10 min timeout
+      await execFileWithTimeout('ocrmypdf', args, { timeout: 600000 }); // 10 min timeout
       const duration = ((Date.now() - startTime) / 1000).toFixed(1);
 
       // Verificar que se creó el archivo
@@ -149,9 +149,11 @@ class OcrService {
 
     try {
       // Primero intentar extraer texto existente
-      const { stdout: existingText } = await execAsync(
-        `pdftotext -q "${inputPath}" -`
-      );
+      const { stdout: existingText } = await execFileWithTimeout('pdftotext', [
+        '-q',
+        inputPath,
+        '-'
+      ]);
 
       if (existingText.trim().length > 100) {
         return {
@@ -161,17 +163,38 @@ class OcrService {
         };
       }
 
-      // Si no hay texto, usar OCR
+      // Si no hay texto, usar OCR con archivo temporal para sidecar
       const langParam = languages.join('+');
-      const { stdout } = await execAsync(
-        `ocrmypdf --sidecar /dev/stdout --language ${langParam} --skip-text "${inputPath}" - 2>/dev/null || true`
-      );
+      const sidecarPath = path.join(outputDir, `sidecar-${Date.now()}.txt`);
+      const tempOutputPath = path.join(outputDir, `temp-ocr-${Date.now()}.pdf`);
 
-      return {
-        text: stdout.trim(),
-        source: 'ocr',
-        languages
-      };
+      try {
+        await execFileWithTimeout('ocrmypdf', [
+          '--sidecar', sidecarPath,
+          '--language', langParam,
+          '--skip-text',
+          inputPath,
+          tempOutputPath
+        ], { timeout: 300000 });
+
+        // Leer el sidecar
+        const text = await fs.readFile(sidecarPath, 'utf-8');
+
+        // Limpiar archivos temporales
+        await fs.unlink(sidecarPath).catch(() => {});
+        await fs.unlink(tempOutputPath).catch(() => {});
+
+        return {
+          text: text.trim(),
+          source: 'ocr',
+          languages
+        };
+      } catch (ocrError) {
+        // Limpiar en caso de error
+        await fs.unlink(sidecarPath).catch(() => {});
+        await fs.unlink(tempOutputPath).catch(() => {});
+        throw ocrError;
+      }
 
     } catch (error) {
       console.error('[OCR] Extract text error:', error.message);
@@ -184,8 +207,10 @@ class OcrService {
    */
   async getInstalledLanguages() {
     try {
-      const { stdout } = await execAsync('tesseract --list-langs 2>&1');
-      const lines = stdout.split('\n').slice(1);
+      const { stdout, stderr } = await execFileWithTimeout('tesseract', ['--list-langs']);
+      // La salida puede venir en stdout o stderr dependiendo de la versión
+      const output = stdout || stderr;
+      const lines = output.split('\n').slice(1);
       return lines.map(l => l.trim()).filter(l => l.length > 0 && l !== 'osd');
     } catch (error) {
       return ['eng', 'spa'];
@@ -204,22 +229,22 @@ class OcrService {
     };
 
     try {
-      await execAsync('ocrmypdf --version');
+      await execFileWithTimeout('ocrmypdf', ['--version']);
       deps.ocrmypdf = true;
     } catch (e) {}
 
     try {
-      await execAsync('tesseract --version');
+      await execFileWithTimeout('tesseract', ['--version']);
       deps.tesseract = true;
     } catch (e) {}
 
     try {
-      await execAsync('gs --version');
+      await execFileWithTimeout('gs', ['--version']);
       deps.ghostscript = true;
     } catch (e) {}
 
     try {
-      await execAsync('pdftotext -v 2>&1');
+      await execFileWithTimeout('pdftotext', ['-v']);
       deps.pdftotext = true;
     } catch (e) {}
 

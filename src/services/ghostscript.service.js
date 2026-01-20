@@ -1,4 +1,4 @@
-const { execAsync } = require('../utils/file.utils');
+const { execFileWithTimeout } = require('../utils/file.utils');
 const path = require('path');
 const fs = require('fs').promises;
 
@@ -24,43 +24,51 @@ class GhostscriptService {
 
     if (contrast === 'normal') {
       // Conversión simple a escala de grises
-      const cmd = `gs -sDEVICE=pdfwrite \
-        -dCompatibilityLevel=1.4 \
-        -dNOPAUSE -dQUIET -dBATCH \
-        -dColorConversionStrategy=/Gray \
-        -dProcessColorModel=/DeviceGray \
-        -sOutputFile="${outputPath}" \
-        "${inputPath}"`;
-      
-      await execAsync(cmd);
+      await execFileWithTimeout('gs', [
+        '-sDEVICE=pdfwrite',
+        '-dCompatibilityLevel=1.4',
+        '-dNOPAUSE',
+        '-dQUIET',
+        '-dBATCH',
+        '-dColorConversionStrategy=/Gray',
+        '-dProcessColorModel=/DeviceGray',
+        `-sOutputFile=${outputPath}`,
+        inputPath
+      ], { timeout: 180000 });
     } else {
       // Para otros niveles de contraste, usamos un proceso de dos pasos:
       // 1. Convertir a grises con Ghostscript
       // 2. Ajustar contraste con ImageMagick
-      
+
       const tempGray = path.join(outputDir, `${filename}-temp-gray-${timestamp}.pdf`);
-      
+
       // Paso 1: Convertir a escala de grises
-      const gsCmd = `gs -sDEVICE=pdfwrite \
-        -dCompatibilityLevel=1.4 \
-        -dNOPAUSE -dQUIET -dBATCH \
-        -dColorConversionStrategy=/Gray \
-        -dProcessColorModel=/DeviceGray \
-        -sOutputFile="${tempGray}" \
-        "${inputPath}"`;
-      
-      await execAsync(gsCmd);
-      
+      await execFileWithTimeout('gs', [
+        '-sDEVICE=pdfwrite',
+        '-dCompatibilityLevel=1.4',
+        '-dNOPAUSE',
+        '-dQUIET',
+        '-dBATCH',
+        '-dColorConversionStrategy=/Gray',
+        '-dProcessColorModel=/DeviceGray',
+        `-sOutputFile=${tempGray}`,
+        inputPath
+      ], { timeout: 180000 });
+
       // Paso 2: Ajustar contraste con ImageMagick
       const contrastParams = {
-        'light': '-brightness-contrast 15x-10',      // Más brillo, menos contraste
-        'high': '-brightness-contrast -5x30',        // Menos brillo, más contraste
-        'extreme': '-brightness-contrast -10x50 -normalize'  // Máximo contraste
+        'light': ['-brightness-contrast', '15x-10'],
+        'high': ['-brightness-contrast', '-5x30'],
+        'extreme': ['-brightness-contrast', '-10x50', '-normalize']
       };
-      
-      const imCmd = `convert -density 150 "${tempGray}" ${contrastParams[contrast]} "${outputPath}"`;
-      await execAsync(imCmd);
-      
+
+      await execFileWithTimeout('convert', [
+        '-density', '150',
+        tempGray,
+        ...contrastParams[contrast],
+        outputPath
+      ], { timeout: 180000 });
+
       // Limpiar archivo temporal
       await fs.unlink(tempGray).catch(() => {});
     }
@@ -156,31 +164,33 @@ class GhostscriptService {
     
     const finalDpi = Math.max(36, Math.min(600, parseInt(dpi) || 120));
     const finalQuality = Math.max(10, Math.min(100, parseInt(imageQuality) || 60));
-    
-    // Comando OPTIMIZADO - menos parámetros, más rápido
-    const cmd = `gs -sDEVICE=pdfwrite \
-      -dCompatibilityLevel=1.4 \
-      -dPDFSETTINGS=${pdfSettings} \
-      -dNOPAUSE -dQUIET -dBATCH \
-      -dFastWebView=true \
-      -dDetectDuplicateImages=true \
-      -dCompressFonts=true \
-      -dSubsetFonts=true \
-      -dColorImageResolution=${finalDpi} \
-      -dGrayImageResolution=${finalDpi} \
-      -dMonoImageResolution=${finalDpi} \
-      -dJPEGQ=${finalQuality} \
-      -sOutputFile="${outputPath}" \
-      "${inputPath}"`;
 
     console.log(`[Compress] Preset DPI: ${finalDpi}, Quality: ${finalQuality}`);
     const startTime = Date.now();
-    
-    await execAsync(cmd);
-    
+
+    // Comando OPTIMIZADO - menos parámetros, más rápido
+    await execFileWithTimeout('gs', [
+      '-sDEVICE=pdfwrite',
+      '-dCompatibilityLevel=1.4',
+      `-dPDFSETTINGS=${pdfSettings}`,
+      '-dNOPAUSE',
+      '-dQUIET',
+      '-dBATCH',
+      '-dFastWebView=true',
+      '-dDetectDuplicateImages=true',
+      '-dCompressFonts=true',
+      '-dSubsetFonts=true',
+      `-dColorImageResolution=${finalDpi}`,
+      `-dGrayImageResolution=${finalDpi}`,
+      `-dMonoImageResolution=${finalDpi}`,
+      `-dJPEGQ=${finalQuality}`,
+      `-sOutputFile=${outputPath}`,
+      inputPath
+    ], { timeout: 300000 }); // 5 min timeout para archivos grandes
+
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     console.log(`[Compress] Completed in ${elapsed}s`);
-    
+
     await fs.access(outputPath);
     return outputPath;
   }

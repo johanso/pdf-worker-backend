@@ -70,6 +70,9 @@ app.use('/api/ocr-pdf', require('./src/routes/ocr-pdf.route'));
 // ===== FIRMAR PDF (PDF-LIB + OPENSSL) =====
 app.use('/api/sign-pdf', require('./src/routes/sign-pdf.route'));
 
+// ===== CENSURAR PDF (PDF-LIB) =====
+app.use('/api/censure-pdf', require('./src/routes/censure-pdf.route'));
+
 // ===== MANEJO DE ERRORES =====
 app.use(require('./src/middleware/error.middleware'));
 
