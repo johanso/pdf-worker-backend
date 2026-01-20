@@ -106,6 +106,7 @@ Ver detalles completos en `RATE_LIMITS.md`
 - ✅ **Rate Limiting**: Límites por IP para prevenir abuso
 - ✅ **Timeout Protection**: Timeouts en comandos externos (2-10 min según operación)
 - ✅ **Auto-cleanup**: Limpieza automática de archivos temporales
+- ✅ **Auto-setup**: Creación automática de directorios necesarios al inicio
 
 ## Comandos Útiles
 
@@ -187,8 +188,9 @@ Ver documentación en el repositorio del frontend.
 - 🔒 **Rate Limiting**: Límites configurables por tipo de endpoint
 - 🔒 **CORS Restrictivo**: Whitelist de orígenes permitidos
 - 🔒 **Timeout Protection**: Timeouts en todas las operaciones externas
+- 🔧 **Auto-setup**: Creación automática de directorios al inicio
 - 📝 Variables de entorno con `.env` support
-- 📝 Documentación completa de seguridad (CORS.md, RATE_LIMITS.md)
+- 📝 Documentación completa de seguridad (CORS.md, RATE_LIMITS.md, SECURITY_AUDIT_RESULTS.md)
 
 ### v1.1.0 (Diciembre 2024)
 - ✅ Soporte para compresión gzip en uploads
