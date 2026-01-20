@@ -51,6 +51,26 @@ systemctl restart caddy
 ## Variables de Entorno
 No hay variables de entorno requeridas. El servidor usa puerto 3001 por defecto.
 
+## Seguridad
+
+### Rate Limiting
+El servidor implementa rate limiting para proteger contra abuso:
+- **Health checks**: 60 req/min
+- **Descargas**: 50 req/5min
+- **Procesamiento**: 30 req/10min
+- **OCR**: 10 req/30min (más restrictivo por ser muy costoso)
+- **API general**: 100 req/15min
+
+Ver detalles completos en `RATE_LIMITS.md`
+
+### Protecciones Implementadas
+- ✅ **Command Injection**: Todos los comandos externos usan `execFile` (argumentos separados)
+- ✅ **Path Traversal**: Sanitización de nombres de archivo en uploads
+- ✅ **File Type Validation**: Whitelist de extensiones permitidas
+- ✅ **Rate Limiting**: Límites por IP para prevenir abuso
+- ✅ **Timeout Protection**: Timeouts en comandos externos (2-10 min según operación)
+- ✅ **Auto-cleanup**: Limpieza automática de archivos temporales
+
 ## Comandos Útiles
 
 ```bash
