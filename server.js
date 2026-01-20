@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const path = require('path');
 const fs = require('fs').promises;
 const swaggerUi = require('swagger-ui-express');
@@ -77,6 +78,13 @@ if (allowedOrigins.length > 0) {
 } else {
   console.log(`[CORS] ⚠️  ADVERTENCIA: No hay orígenes configurados en ALLOWED_ORIGINS`);
 }
+
+// ===== HELMET - SEGURIDAD HTTP =====
+// Agrega headers de seguridad para prevenir ataques comunes
+app.use(helmet({
+  contentSecurityPolicy: false, // Desactivado para permitir Swagger UI
+  crossOriginEmbedderPolicy: false // Compatible con CORS configurado
+}));
 
 // Middleware
 app.use(express.json());
