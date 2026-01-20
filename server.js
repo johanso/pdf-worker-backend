@@ -87,7 +87,7 @@ app.use(helmet({
 }));
 
 // Middleware
-app.use(express.json());
+app.use(express.json({ limit: '10mb' })); // Protección contra DoS con JSONs gigantes
 
 // ===== DOCUMENTACIÓN API (SWAGGER) =====
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
