@@ -19,6 +19,63 @@ async function decompressIfNeeded(buffer, fileName) {
   return buffer;
 }
 
+/**
+ * @swagger
+ * /api/pdf-to-ppt:
+ *   post:
+ *     summary: Convierte archivos PDF a presentaciones PowerPoint (.pptx)
+ *     tags: [PDF → Office]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - file
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *                 description: Archivo PDF o comprimido (.gz)
+ *               compressed:
+ *                 type: string
+ *                 enum: ['true', 'false']
+ *                 description: Indica si el archivo está comprimido con gzip
+ *     responses:
+ *       200:
+ *         description: Conversión exitosa
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 fileId:
+ *                   type: string
+ *                   description: ID para descargar el PPTX desde /api/download/:fileId
+ *                   example: abc123def456
+ *                 fileName:
+ *                   type: string
+ *                   example: presentacion.pptx
+ *                 size:
+ *                   type: number
+ *                   description: Tamaño del PPTX en bytes
+ *       400:
+ *         description: Formato de archivo inválido
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Error en el servidor
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.post('/', upload.single('file'), async (req, res) => {
   const tempFiles = req.file ? [req.file.path] : [];
   const outputDir = path.join(__dirname, '../../outputs');

@@ -20,14 +20,78 @@ async function decompressIfNeeded(buffer, fileName) {
 }
 
 /**
- * POST /api/flatten-pdf
- * Aplana un PDF usando pdftk (convierte elementos interactivos en estáticos)
- * 
- * Body params:
- * - file: archivo PDF
- * - mode: 'all' | 'forms' | 'annotations' (default: 'all')
- * - compress: 'true' | 'false' - comprimir el resultado (default: 'true')
- * - compressed: 'true' si el archivo viene comprimido con gzip
+ * @swagger
+ * /api/flatten-pdf:
+ *   post:
+ *     summary: Aplana un PDF convirtiendo elementos interactivos en contenido estático
+ *     tags: [Manipulación PDF]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - file
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *                 description: Archivo PDF o comprimido (.gz)
+ *               mode:
+ *                 type: string
+ *                 enum: [all, forms, annotations]
+ *                 description: Qué elementos aplanar
+ *                 default: all
+ *               compress:
+ *                 type: string
+ *                 enum: ['true', 'false']
+ *                 description: Comprimir el resultado después de aplanar
+ *                 default: 'true'
+ *               fileName:
+ *                 type: string
+ *                 description: Nombre personalizado para el PDF resultante
+ *               compressed:
+ *                 type: string
+ *                 enum: ['true', 'false']
+ *                 description: Indica si el archivo está comprimido con gzip
+ *     responses:
+ *       200:
+ *         description: Aplanamiento exitoso
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 fileId:
+ *                   type: string
+ *                 fileName:
+ *                   type: string
+ *                 originalSize:
+ *                   type: number
+ *                 resultSize:
+ *                   type: number
+ *                 reduction:
+ *                   type: number
+ *                 mode:
+ *                   type: string
+ *                 compressed:
+ *                   type: boolean
+ *       400:
+ *         description: Archivo inválido
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Error en el servidor
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.post('/', upload.single('file'), async (req, res) => {
   const tempFiles = req.file ? [req.file.path] : [];
@@ -160,8 +224,35 @@ router.post('/', upload.single('file'), async (req, res) => {
 });
 
 /**
- * GET /api/flatten-pdf/info
- * Información sobre la funcionalidad y opciones disponibles
+ * @swagger
+ * /api/flatten-pdf/info:
+ *   get:
+ *     summary: Obtiene información sobre opciones de aplanamiento
+ *     tags: [Manipulación PDF]
+ *     responses:
+ *       200:
+ *         description: Información de configuración
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 description:
+ *                   type: string
+ *                 useCases:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *                 modeOptions:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                 compressOption:
+ *                   type: object
+ *                 limits:
+ *                   type: object
+ *                 engine:
+ *                   type: string
  */
 router.get('/info', (req, res) => {
   res.json({

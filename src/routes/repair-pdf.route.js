@@ -20,13 +20,79 @@ async function decompressIfNeeded(buffer, fileName) {
 }
 
 /**
- * POST /api/repair-pdf
- * Repara un PDF dañado o corrupto usando QPDF
- * 
- * Body params:
- * - file: archivo PDF
- * - mode: 'auto' | 'aggressive' | 'linearize' (default: 'auto')
- * - compressed: 'true' si el archivo viene comprimido con gzip
+ * @swagger
+ * /api/repair-pdf:
+ *   post:
+ *     summary: Repara un PDF dañado o corrupto
+ *     tags: [Utilidades]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - file
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *                 description: Archivo PDF dañado o comprimido (.gz)
+ *               mode:
+ *                 type: string
+ *                 enum: [auto, aggressive, linearize]
+ *                 description: Modo de reparación
+ *                 default: auto
+ *               fileName:
+ *                 type: string
+ *                 description: Nombre personalizado para el PDF resultante
+ *               compressed:
+ *                 type: string
+ *                 enum: ['true', 'false']
+ *                 description: Indica si el archivo está comprimido con gzip
+ *     responses:
+ *       200:
+ *         description: Reparación exitosa
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 fileId:
+ *                   type: string
+ *                 fileName:
+ *                   type: string
+ *                 originalSize:
+ *                   type: number
+ *                 resultSize:
+ *                   type: number
+ *                 mode:
+ *                   type: string
+ *                 repairActions:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *                 warnings:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *                 fullyRepaired:
+ *                   type: boolean
+ *       400:
+ *         description: Archivo inválido
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Error en el servidor o PDF muy dañado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.post('/', upload.single('file'), async (req, res) => {
   const tempFiles = req.file ? [req.file.path] : [];
@@ -196,8 +262,57 @@ router.post('/', upload.single('file'), async (req, res) => {
 });
 
 /**
- * POST /api/repair-pdf/check
- * Verifica el estado de un PDF sin repararlo
+ * @swagger
+ * /api/repair-pdf/check:
+ *   post:
+ *     summary: Verifica el estado de un PDF sin repararlo
+ *     tags: [Utilidades]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - file
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *                 description: Archivo PDF para verificar
+ *               compressed:
+ *                 type: string
+ *                 enum: ['true', 'false']
+ *                 description: Indica si el archivo está comprimido con gzip
+ *     responses:
+ *       200:
+ *         description: Análisis completado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 fileName:
+ *                   type: string
+ *                 status:
+ *                   type: string
+ *                   enum: [ok, damaged, encrypted, invalid]
+ *                 issues:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *                 canRepair:
+ *                   type: boolean
+ *                 recommendation:
+ *                   type: string
+ *       500:
+ *         description: Error al verificar
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.post('/check', upload.single('file'), async (req, res) => {
   const tempFiles = req.file ? [req.file.path] : [];
@@ -401,7 +516,33 @@ router.post('/check', upload.single('file'), async (req, res) => {
 });
 
 /**
- * GET /api/repair-pdf/info
+ * @swagger
+ * /api/repair-pdf/info:
+ *   get:
+ *     summary: Obtiene información sobre opciones de reparación
+ *     tags: [Utilidades]
+ *     responses:
+ *       200:
+ *         description: Información de configuración
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 description:
+ *                   type: string
+ *                 useCases:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *                 modeOptions:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                 limits:
+ *                   type: object
+ *                 engine:
+ *                   type: string
  */
 router.get('/info', (req, res) => {
   res.json({

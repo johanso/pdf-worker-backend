@@ -39,6 +39,92 @@ async function decompressFileIfNeeded(filePath, originalName, isCompressed) {
   return filePath;
 }
 
+/**
+ * @swagger
+ * /api/image-to-pdf:
+ *   post:
+ *     summary: Convierte imágenes a un documento PDF
+ *     tags: [Imágenes]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - images
+ *             properties:
+ *               images:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   format: binary
+ *                 description: Múltiples imágenes (máximo 200)
+ *               pageSize:
+ *                 type: string
+ *                 enum: [a4, letter, legal, fit]
+ *                 description: Tamaño de página para el PDF
+ *                 default: a4
+ *               orientation:
+ *                 type: string
+ *                 enum: [auto, portrait, landscape]
+ *                 description: Orientación de las páginas
+ *                 default: auto
+ *               margin:
+ *                 type: string
+ *                 enum: [none, small, normal]
+ *                 description: Márgenes del documento
+ *                 default: small
+ *               quality:
+ *                 type: string
+ *                 enum: [original, compressed]
+ *                 description: Calidad de las imágenes
+ *                 default: original
+ *               rotations:
+ *                 type: string
+ *                 description: Rotaciones en grados separadas por comas (0,90,180,270)
+ *               fileName:
+ *                 type: string
+ *                 description: Nombre personalizado para el PDF
+ *               compressed:
+ *                 type: string
+ *                 enum: ['true', 'false']
+ *                 description: Indica si las imágenes están comprimidas con gzip
+ *     responses:
+ *       200:
+ *         description: Conversión exitosa
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 fileId:
+ *                   type: string
+ *                   description: ID para descargar desde /api/download/:fileId
+ *                   example: abc123def456
+ *                 fileName:
+ *                   type: string
+ *                   example: images-to-pdf.pdf
+ *                 size:
+ *                   type: number
+ *                 totalImages:
+ *                   type: number
+ *       400:
+ *         description: Sin imágenes o configuración inválida
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Error en el servidor
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.post('/', upload.array('images', 200), async (req, res) => {
   const tempFiles = [];
   const outputDir = path.join(__dirname, '../../outputs');
@@ -197,6 +283,48 @@ router.post('/', upload.array('images', 200), async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/image-to-pdf/info:
+ *   get:
+ *     summary: Obtiene información sobre formatos y opciones soportados
+ *     tags: [Imágenes]
+ *     responses:
+ *       200:
+ *         description: Información de configuración disponible
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 supportedFormats:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *                 pageSizes:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *                 orientations:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *                 margins:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *                 qualities:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *                 limits:
+ *                   type: object
+ *                   properties:
+ *                     maxImages:
+ *                       type: number
+ *                     maxFileSize:
+ *                       type: string
+ */
 router.get('/info', function(req, res) {
   res.json({
     supportedFormats: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'tiff'],

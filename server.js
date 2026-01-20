@@ -3,6 +3,8 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs').promises;
+const swaggerUi = require('swagger-ui-express');
+const swaggerSpec = require('./swagger.config');
 const {
   apiLimiter,
   uploadLimiter,
@@ -79,11 +81,58 @@ if (allowedOrigins.length > 0) {
 // Middleware
 app.use(express.json());
 
+// ===== DOCUMENTACIÓN API (SWAGGER) =====
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+  customCss: '.swagger-ui .topbar { display: none }',
+  customSiteTitle: 'PDF Worker API Docs'
+}));
+
 // Rate limiter general para todas las rutas /api/* como fallback
 // Este se aplica a rutas que no tienen un limiter específico
 app.use('/api/', apiLimiter);
 
-// Health check con rate limiting permisivo
+/**
+ * @swagger
+ * /health:
+ *   get:
+ *     summary: Verifica el estado del servidor y servicios
+ *     tags: [Health]
+ *     responses:
+ *       200:
+ *         description: Servidor funcionando correctamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: ok
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                 services:
+ *                   type: object
+ *                   properties:
+ *                     libreoffice:
+ *                       type: string
+ *                       example: available
+ *                     ghostscript:
+ *                       type: string
+ *                       example: available
+ *                     imagemagick:
+ *                       type: string
+ *                       example: available
+ *                     qpdf:
+ *                       type: string
+ *                       example: available
+ *                     tesseract:
+ *                       type: string
+ *                       example: available
+ *                     playwright:
+ *                       type: string
+ *                       example: available
+ */
 app.get('/health', healthCheckLimiter, (req, res) => {
   res.json({
     status: 'ok',

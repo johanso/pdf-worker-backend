@@ -7,6 +7,89 @@ const fileStore = require('../services/file-store.service');
 const path = require('path');
 const fs = require('fs').promises;
 
+/**
+ * @swagger
+ * /api/html-to-pdf:
+ *   post:
+ *     summary: Convierte HTML o URL a PDF
+ *     tags: [HTML → PDF]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *                 description: Archivo HTML (requerido si no se proporciona URL)
+ *               url:
+ *                 type: string
+ *                 description: URL a convertir (requerido si no se proporciona archivo)
+ *                 example: https://ejemplo.com
+ *               isUrl:
+ *                 type: string
+ *                 enum: ['true', 'false']
+ *                 description: Indica si se proporciona URL en lugar de archivo
+ *               pageFormat:
+ *                 type: string
+ *                 enum: [A4, Letter, Legal]
+ *                 description: Formato de página
+ *                 default: A4
+ *               landscape:
+ *                 type: string
+ *                 enum: ['true', 'false']
+ *                 description: Orientación horizontal
+ *                 default: 'false'
+ *               viewport:
+ *                 type: string
+ *                 description: Dimensiones de ventana en formato JSON
+ *                 example: '{"width":1440,"height":900}'
+ *               margins:
+ *                 type: string
+ *                 description: Márgenes en formato JSON
+ *                 example: '{"top":20,"right":20,"bottom":20,"left":20}'
+ *               fileName:
+ *                 type: string
+ *                 description: Nombre personalizado para el PDF
+ *     responses:
+ *       200:
+ *         description: Conversión exitosa
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 fileId:
+ *                   type: string
+ *                   description: ID para descargar desde /api/download/:fileId
+ *                   example: abc123def456
+ *                 fileName:
+ *                   type: string
+ *                 size:
+ *                   type: number
+ *                 sourceType:
+ *                   type: string
+ *                   enum: [file, url]
+ *                 viewport:
+ *                   type: object
+ *       400:
+ *         description: URL inválida o archivo no proporcionado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Error al acceder a URL o convertir
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.post('/', upload.single('file'), async (req, res) => {
   let inputPath;
   const outputDir = path.join(__dirname, '../../outputs');
@@ -104,6 +187,59 @@ router.post('/', upload.single('file'), async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/html-to-pdf/preview:
+ *   post:
+ *     summary: Genera una vista previa (captura de pantalla) de HTML o URL
+ *     tags: [HTML → PDF]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *                 description: Archivo HTML (requerido si no se proporciona URL)
+ *               url:
+ *                 type: string
+ *                 description: URL a previsualizar
+ *               isUrl:
+ *                 type: string
+ *                 enum: ['true', 'false']
+ *                 description: Indica si se proporciona URL
+ *               viewport:
+ *                 type: string
+ *                 description: Dimensiones en formato JSON
+ *                 example: '{"width":1440,"height":900}'
+ *               fullPage:
+ *                 type: string
+ *                 enum: ['true', 'false']
+ *                 description: Capturar página completa
+ *     responses:
+ *       200:
+ *         description: Imagen de vista previa
+ *         content:
+ *           image/png:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       400:
+ *         description: URL inválida o archivo no proporcionado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Error al acceder a URL
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.post('/preview', upload.single('file'), async (req, res) => {
   let inputPath;
   const outputDir = path.join(__dirname, '../../outputs');
@@ -159,6 +295,47 @@ router.post('/preview', upload.single('file'), async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/html-to-pdf/health:
+ *   get:
+ *     summary: Verifica el estado del motor de conversión HTML a PDF
+ *     tags: [HTML → PDF]
+ *     responses:
+ *       200:
+ *         description: Estado del servicio
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   enum: [ok, error]
+ *                 engine:
+ *                   type: string
+ *                   example: playwright
+ *                 browser:
+ *                   type: string
+ *                   example: chromium
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *       500:
+ *         description: Error en el motor
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: error
+ *                 error:
+ *                   type: string
+ *                 timestamp:
+ *                   type: string
+ */
 router.get('/health', async (req, res) => {
   try {
     const browser = await playwrightService.getBrowser();

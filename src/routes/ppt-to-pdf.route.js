@@ -19,6 +19,73 @@ async function decompressIfNeeded(buffer, fileName) {
   return buffer;
 }
 
+/**
+ * @swagger
+ * /api/ppt-to-pdf:
+ *   post:
+ *     summary: Convierte presentaciones PowerPoint (.ppt, .pptx) a PDF
+ *     tags: [Office → PDF]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - file
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *                 description: Archivo PowerPoint (.ppt, .pptx) o comprimido (.gz)
+ *               fileName:
+ *                 type: string
+ *                 description: Nombre personalizado para el PDF resultante
+ *                 example: presentacion.pdf
+ *               compressed:
+ *                 type: string
+ *                 enum: ['true', 'false']
+ *                 description: Indica si el archivo está comprimido con gzip
+ *     responses:
+ *       200:
+ *         description: Conversión exitosa
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 fileId:
+ *                   type: string
+ *                   description: ID para descargar el PDF desde /api/download/:fileId
+ *                   example: abc123def456
+ *                 fileName:
+ *                   type: string
+ *                   example: presentacion.pdf
+ *                 size:
+ *                   type: number
+ *                   description: Tamaño del PDF en bytes
+ *                 resultSize:
+ *                   type: number
+ *                   description: Tamaño del resultado en bytes
+ *                 originalFormat:
+ *                   type: string
+ *                   example: PPTX
+ *       400:
+ *         description: Formato de archivo inválido
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Error en el servidor
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.post('/', upload.single('file'), async (req, res) => {
   const tempFiles = req.file ? [req.file.path] : [];
   const outputDir = path.join(__dirname, '../../outputs');

@@ -20,6 +20,86 @@ async function decompressIfNeeded(buffer, fileName) {
   return buffer;
 }
 
+/**
+ * @swagger
+ * /api/pdf-to-image:
+ *   post:
+ *     summary: Convierte páginas de PDF a imágenes (JPG, PNG, WebP, TIFF, BMP)
+ *     tags: [Imágenes]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - file
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *                 description: Archivo PDF o comprimido (.gz)
+ *               format:
+ *                 type: string
+ *                 enum: [jpg, png, webp, tiff, bmp]
+ *                 description: Formato de imagen deseado
+ *                 default: jpg
+ *               quality:
+ *                 type: string
+ *                 description: Calidad de la imagen de 1 a 100 (para JPG y WebP)
+ *                 default: '90'
+ *               dpi:
+ *                 type: string
+ *                 enum: ['72', '150', '300', '600']
+ *                 description: Resolución de las imágenes en puntos por pulgada
+ *                 default: '150'
+ *               pages:
+ *                 type: string
+ *                 description: Páginas a convertir (all, 1-5, 1,3,5)
+ *                 default: all
+ *               fileName:
+ *                 type: string
+ *                 description: Nombre personalizado para las imágenes
+ *               compressed:
+ *                 type: string
+ *                 enum: ['true', 'false']
+ *                 description: Indica si el archivo está comprimido con gzip
+ *     responses:
+ *       200:
+ *         description: Conversión exitosa
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 fileId:
+ *                   type: string
+ *                   description: ID para descargar desde /api/download/:fileId
+ *                   example: abc123def456
+ *                 fileName:
+ *                   type: string
+ *                   description: Una imagen si hay 1 página o archivo ZIP si hay múltiples
+ *                 size:
+ *                   type: number
+ *                 imagesCount:
+ *                   type: number
+ *                   description: Cantidad de imágenes generadas
+ *       400:
+ *         description: Formato no soportado o configuración inválida
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Error en el servidor
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.post('/', upload.single('file'), async (req, res) => {  const tempFiles = req.file ? [req.file.path] : [];
   const outputDir = path.join(__dirname, '../../outputs');
   
@@ -238,6 +318,45 @@ router.post('/', upload.single('file'), async (req, res) => {  const tempFiles =
   }
 });
 
+/**
+ * @swagger
+ * /api/pdf-to-image/formats:
+ *   get:
+ *     summary: Obtiene formatos de imagen soportados y opciones disponibles
+ *     tags: [Imágenes]
+ *     responses:
+ *       200:
+ *         description: Lista de formatos y opciones
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 formats:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: string
+ *                       label:
+ *                         type: string
+ *                       mimeType:
+ *                         type: string
+ *                       supportsQuality:
+ *                         type: boolean
+ *                 dpiOptions:
+ *                   type: array
+ *                   items:
+ *                     type: number
+ *                 limits:
+ *                   type: object
+ *                   properties:
+ *                     maxPages:
+ *                       type: number
+ *                     maxFileSize:
+ *                       type: string
+ */
 router.get('/formats', (req, res) => {
   res.json({
     formats: [

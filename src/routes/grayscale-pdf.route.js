@@ -20,13 +20,72 @@ async function decompressIfNeeded(buffer, fileName) {
 }
 
 /**
- * POST /api/grayscale-pdf
- * Convierte un PDF a escala de grises con control de contraste
- * 
- * Body params:
- * - file: archivo PDF
- * - contrast: 'light' | 'normal' | 'high' | 'extreme' (default: 'normal')
- * - compressed: 'true' si el archivo viene comprimido con gzip
+ * @swagger
+ * /api/grayscale-pdf:
+ *   post:
+ *     summary: Convierte un PDF a escala de grises con control de contraste
+ *     tags: [Compresión y Optimización]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - file
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *                 description: Archivo PDF o comprimido (.gz)
+ *               contrast:
+ *                 type: string
+ *                 enum: [light, normal, high, extreme]
+ *                 description: Nivel de contraste de la conversión
+ *                 default: normal
+ *               fileName:
+ *                 type: string
+ *                 description: Nombre personalizado para el PDF resultante
+ *               compressed:
+ *                 type: string
+ *                 enum: ['true', 'false']
+ *                 description: Indica si el archivo está comprimido con gzip
+ *     responses:
+ *       200:
+ *         description: Conversión exitosa
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 fileId:
+ *                   type: string
+ *                 fileName:
+ *                   type: string
+ *                 originalSize:
+ *                   type: number
+ *                 resultSize:
+ *                   type: number
+ *                 savings:
+ *                   type: number
+ *                   description: Bytes ahorrados
+ *                 contrast:
+ *                   type: string
+ *       400:
+ *         description: Archivo inválido
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Error en el servidor
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.post('/', upload.single('file'), async (req, res) => {
   const tempFiles = req.file ? [req.file.path] : [];
@@ -106,8 +165,31 @@ router.post('/', upload.single('file'), async (req, res) => {
 });
 
 /**
- * GET /api/grayscale-pdf/info
- * Información sobre la funcionalidad y opciones disponibles
+ * @swagger
+ * /api/grayscale-pdf/info:
+ *   get:
+ *     summary: Obtiene información sobre opciones de conversión a escala de grises
+ *     tags: [Compresión y Optimización]
+ *     responses:
+ *       200:
+ *         description: Información de configuración
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 description:
+ *                   type: string
+ *                 benefits:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *                 contrastOptions:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                 limits:
+ *                   type: object
  */
 router.get('/info', (req, res) => {
   res.json({

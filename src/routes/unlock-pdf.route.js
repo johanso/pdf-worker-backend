@@ -20,13 +20,75 @@ async function decompressIfNeeded(buffer, fileName) {
 }
 
 /**
- * POST /api/unlock-pdf
- * Desbloquea un PDF protegido con contraseña usando QPDF
- * 
- * Body params:
- * - file: archivo PDF protegido
- * - password: contraseña del PDF
- * - compressed: 'true' si el archivo viene comprimido con gzip
+ * @swagger
+ * /api/unlock-pdf:
+ *   post:
+ *     summary: Desbloquea un PDF protegido con contraseña
+ *     tags: [Seguridad]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - file
+ *               - password
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *                 description: Archivo PDF protegido o comprimido (.gz)
+ *               password:
+ *                 type: string
+ *                 description: Contraseña del PDF
+ *                 example: miContraseña123
+ *               fileName:
+ *                 type: string
+ *                 description: Nombre personalizado para el PDF resultante
+ *               compressed:
+ *                 type: string
+ *                 enum: ['true', 'false']
+ *                 description: Indica si el archivo está comprimido con gzip
+ *     responses:
+ *       200:
+ *         description: PDF desbloqueado exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 fileId:
+ *                   type: string
+ *                   description: ID para descargar desde /api/download/:fileId
+ *                   example: abc123def456
+ *                 fileName:
+ *                   type: string
+ *                 originalSize:
+ *                   type: number
+ *                 resultSize:
+ *                   type: number
+ *       400:
+ *         description: Contraseña incorrecta o PDF no protegido
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                 code:
+ *                   type: string
+ *                   enum: [INVALID_PASSWORD, NOT_ENCRYPTED]
+ *       500:
+ *         description: Error en el servidor
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.post('/', upload.single('file'), async (req, res) => {
   const tempFiles = req.file ? [req.file.path] : [];
@@ -146,8 +208,52 @@ router.post('/', upload.single('file'), async (req, res) => {
 });
 
 /**
- * POST /api/unlock-pdf/check
- * Verifica si un PDF está protegido
+ * @swagger
+ * /api/unlock-pdf/check:
+ *   post:
+ *     summary: Verifica si un PDF está protegido con contraseña
+ *     tags: [Seguridad]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - file
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *                 description: Archivo PDF o comprimido (.gz)
+ *               compressed:
+ *                 type: string
+ *                 enum: ['true', 'false']
+ *                 description: Indica si el archivo está comprimido con gzip
+ *     responses:
+ *       200:
+ *         description: Estado de protección del PDF
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 isEncrypted:
+ *                   type: boolean
+ *                   example: true
+ *                 encryptionInfo:
+ *                   type: string
+ *                   example: 256-bit AES
+ *                 message:
+ *                   type: string
+ *       500:
+ *         description: Error al verificar el PDF
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.post('/check', upload.single('file'), async (req, res) => {
   const tempFiles = req.file ? [req.file.path] : [];
@@ -216,7 +322,36 @@ router.post('/check', upload.single('file'), async (req, res) => {
 });
 
 /**
- * GET /api/unlock-pdf/info
+ * @swagger
+ * /api/unlock-pdf/info:
+ *   get:
+ *     summary: Obtiene información sobre cómo desbloquear PDFs
+ *     tags: [Seguridad]
+ *     responses:
+ *       200:
+ *         description: Información de requisitos y opciones
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 description:
+ *                   type: string
+ *                 useCases:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *                 requirements:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *                 limits:
+ *                   type: object
+ *                   properties:
+ *                     maxFileSize:
+ *                       type: string
+ *                 engine:
+ *                   type: string
  */
 router.get('/info', (req, res) => {
   res.json({

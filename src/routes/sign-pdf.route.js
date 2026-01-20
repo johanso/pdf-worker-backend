@@ -19,40 +19,74 @@ async function decompressIfNeeded(buffer, fileName) {
 }
 
 /**
- * POST /api/worker/sign-pdf
- * Firma un PDF insertando imágenes de firma en posiciones específicas
- * 
- * Body params:
- * - file: archivo PDF (multipart/form-data)
- * - signatures: JSON string con array de firmas a insertar
- * - fileName: nombre del archivo de salida (opcional)
- * - compressed: 'true' si el archivo viene comprimido con gzip
- * 
- * Formato de signatures:
- * [
- *   {
- *     id: "sig-1",                    // ID único de la firma
- *     pageNumber: 1,                  // Página donde insertar (1-based)
- *     x: 100,                         // Coordenadas X en puntos PDF (desde izquierda)
- *     y: 500,                         // Coordenadas Y en puntos PDF (desde ABAJO)
- *     width: 200,                     // Ancho en puntos PDF
- *     height: 100,                    // Alto en puntos PDF
- *     rotation: 0,                    // Rotación en grados (0, 90, 180, 270)
- *     opacity: 1.0,                   // Opacidad (0.0 - 1.0)
- *     image: "data:image/png;base64,..." // Imagen en base64 (PNG o JPG)
- *   }
- * ]
- * 
- * Response:
- * {
- *   success: true,
- *   fileId: "abc123",
- *   fileName: "documento-firmado.pdf",
- *   originalSize: 1234567,
- *   resultSize: 1345678,
- *   signaturesApplied: 2,
- *   pages: [1, 3]  // Páginas que tienen firmas
- * }
+ * @swagger
+ * /api/sign-pdf:
+ *   post:
+ *     summary: Firma un PDF insertando imágenes de firma en posiciones específicas
+ *     tags: [Seguridad]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - file
+ *               - signatures
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *                 description: Archivo PDF o comprimido (.gz)
+ *               signatures:
+ *                 type: string
+ *                 description: Array JSON con instrucciones de firma
+ *                 example: '[{"pageNumber":1,"x":100,"y":500,"width":200,"height":100,"image":"data:image/png;base64,..."}]'
+ *               fileName:
+ *                 type: string
+ *                 description: Nombre personalizado para el PDF resultante
+ *               compressed:
+ *                 type: string
+ *                 enum: ['true', 'false']
+ *                 description: Indica si el archivo está comprimido con gzip
+ *     responses:
+ *       200:
+ *         description: PDF firmado exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 fileId:
+ *                   type: string
+ *                 fileName:
+ *                   type: string
+ *                 originalSize:
+ *                   type: number
+ *                 resultSize:
+ *                   type: number
+ *                 signaturesApplied:
+ *                   type: number
+ *                 pages:
+ *                   type: array
+ *                   items:
+ *                     type: number
+ *                   description: Páginas que contienen firmas
+ *       400:
+ *         description: Firmas inválidas o páginas fuera de rango
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Error en el servidor
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.post('/', upload.single('file'), async (req, res) => {
   const tempFiles = req.file ? [req.file.path] : [];
@@ -252,8 +286,35 @@ router.post('/', upload.single('file'), async (req, res) => {
 });
 
 /**
- * GET /api/worker/sign-pdf/info
- * Información sobre la funcionalidad de firma
+ * @swagger
+ * /api/sign-pdf/info:
+ *   get:
+ *     summary: Obtiene información sobre el formato de firmas digitales
+ *     tags: [Seguridad]
+ *     responses:
+ *       200:
+ *         description: Información sobre el formato de firma
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 description:
+ *                   type: string
+ *                 useCases:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *                 signatureFormat:
+ *                   type: object
+ *                 coordinateSystem:
+ *                   type: object
+ *                 limits:
+ *                   type: object
+ *                 example:
+ *                   type: object
+ *                 engine:
+ *                   type: string
  */
 router.get('/info', (req, res) => {
   res.json({

@@ -18,6 +18,84 @@ async function decompressIfNeeded(buffer, fileName) {
   return buffer;
 }
 
+/**
+ * @swagger
+ * /api/organize-pdf:
+ *   post:
+ *     summary: Organiza múltiples PDFs en un solo documento o reordena páginas
+ *     tags: [Manipulación PDF]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - instructions
+ *             properties:
+ *               file-0:
+ *                 type: string
+ *                 format: binary
+ *                 description: Primer PDF o comprimido (.gz)
+ *               file-1:
+ *                 type: string
+ *                 format: binary
+ *                 description: Segundo PDF (opcional)
+ *               file-n:
+ *                 type: string
+ *                 format: binary
+ *                 description: Más PDFs (opcional)
+ *               instructions:
+ *                 type: string
+ *                 description: Array JSON con instrucciones de organización
+ *                 example: '[{"fileIndex":0,"originalIndex":0,"rotation":0},{"isBlank":true}]'
+ *               fileName:
+ *                 type: string
+ *                 description: Nombre personalizado para el PDF resultante
+ *               compressed:
+ *                 type: string
+ *                 enum: ['true', 'false']
+ *                 description: Indica si los archivos están comprimidos con gzip
+ *     responses:
+ *       200:
+ *         description: PDFs organizados exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 fileId:
+ *                   type: string
+ *                   description: ID para descargar desde /api/download/:fileId
+ *                   example: abc123def456
+ *                 fileName:
+ *                   type: string
+ *                 size:
+ *                   type: number
+ *                 pages:
+ *                   type: number
+ *                 totalPages:
+ *                   type: number
+ *                 blankPages:
+ *                   type: number
+ *                 filesUsed:
+ *                   type: number
+ *       400:
+ *         description: Instrucciones inválidas o sin archivos
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Error en el servidor
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.post('/', upload.any(), async (req, res) => {
   const tempFiles = req.files ? req.files.map(f => f.path) : [];
   

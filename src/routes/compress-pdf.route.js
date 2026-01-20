@@ -20,8 +20,89 @@ async function decompressIfNeeded(buffer, fileName) {
 }
 
 /**
- * POST /api/compress-pdf
- * Comprime un PDF
+ * @swagger
+ * /api/compress-pdf:
+ *   post:
+ *     summary: Comprime un archivo PDF reduciendo su tamaño
+ *     description: Ofrece dos modos de compresión - simple (preset estándar) y advanced (control personalizado de DPI y calidad)
+ *     tags: [Compresión y Optimización]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - file
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *                 description: Archivo PDF a comprimir
+ *               mode:
+ *                 type: string
+ *                 enum: [simple, advanced]
+ *                 default: simple
+ *                 description: Modo de compresión (simple usa preset /screen, advanced permite personalizar)
+ *               dpi:
+ *                 type: integer
+ *                 minimum: 72
+ *                 maximum: 300
+ *                 default: 120
+ *                 description: DPI para imágenes (solo en modo advanced) - menor = más compresión
+ *               imageQuality:
+ *                 type: integer
+ *                 minimum: 1
+ *                 maximum: 100
+ *                 default: 60
+ *                 description: Calidad JPEG (solo en modo advanced) - menor = más compresión
+ *               fileName:
+ *                 type: string
+ *                 description: Nombre personalizado para el PDF comprimido
+ *                 example: documento_comprimido.pdf
+ *               compressed:
+ *                 type: string
+ *                 enum: ['true', 'false']
+ *                 description: Indica si el archivo está comprimido con gzip
+ *     responses:
+ *       200:
+ *         description: PDF comprimido exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 fileId:
+ *                   type: string
+ *                   description: ID para descargar el PDF comprimido
+ *                 fileName:
+ *                   type: string
+ *                   example: compressed.pdf
+ *                 originalSize:
+ *                   type: number
+ *                   description: Tamaño original en bytes
+ *                 compressedSize:
+ *                   type: number
+ *                   description: Tamaño comprimido en bytes
+ *                 compressionRatio:
+ *                   type: string
+ *                   description: Ratio de compresión en porcentaje
+ *                   example: "45.2%"
+ *       400:
+ *         description: Archivo no válido o falta el PDF
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Error en el servidor
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.post('/', upload.single('file'), async (req, res) => {
   const tempFiles = req.file ? [req.file.path] : [];

@@ -33,8 +33,82 @@ async function decompressIfNeeded(buffer, fileName) {
 }
 
 /**
- * POST /api/ocr-pdf
- * Aplica OCR a un PDF escaneado
+ * @swagger
+ * /api/ocr-pdf:
+ *   post:
+ *     summary: Aplica reconocimiento óptico de caracteres (OCR) a un PDF escaneado
+ *     tags: [OCR]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - file
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *                 description: Archivo PDF o comprimido (.gz)
+ *               languages:
+ *                 type: string
+ *                 description: Idiomas para OCR en formato JSON o CSV (códigos ISO 639-3)
+ *                 example: '["spa","eng"]'
+ *                 default: '["spa","eng"]'
+ *               dpi:
+ *                 type: string
+ *                 description: Resolución en puntos por pulgada (150-600)
+ *                 default: '300'
+ *               optimize:
+ *                 type: string
+ *                 enum: ['true', 'false']
+ *                 description: Optimizar PDF después de OCR
+ *                 default: 'true'
+ *               fileName:
+ *                 type: string
+ *                 description: Nombre personalizado para el PDF resultante
+ *               compressed:
+ *                 type: string
+ *                 enum: ['true', 'false']
+ *                 description: Indica si el archivo está comprimido con gzip
+ *     responses:
+ *       200:
+ *         description: OCR aplicado exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 fileId:
+ *                   type: string
+ *                   description: ID para descargar desde /api/download/:fileId
+ *                   example: abc123def456
+ *                 fileName:
+ *                   type: string
+ *                 size:
+ *                   type: number
+ *                 pages:
+ *                   type: number
+ *                 languages:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *       400:
+ *         description: Archivo inválido o configuración incorrecta
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Error en el servidor
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.post('/', upload.any(), async (req, res) => {
   const file = getUploadedFile(req);

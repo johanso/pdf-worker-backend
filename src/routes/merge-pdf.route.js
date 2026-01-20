@@ -24,6 +24,77 @@ async function decompressIfNeeded(buffer, fileName) {
   return buffer;
 }
 
+/**
+ * @swagger
+ * /api/merge-pdf:
+ *   post:
+ *     summary: Fusiona múltiples archivos PDF en uno solo
+ *     description: Combina de 2 hasta 50 archivos PDF en el orden proporcionado
+ *     tags: [Manipulación PDF]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - files
+ *             properties:
+ *               files:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   format: binary
+ *                 minItems: 2
+ *                 maxItems: 50
+ *                 description: Archivos PDF a fusionar (hasta 50)
+ *               fileName:
+ *                 type: string
+ *                 description: Nombre del PDF fusionado
+ *                 example: documento_fusionado.pdf
+ *               compressed:
+ *                 type: string
+ *                 enum: ['true', 'false']
+ *                 description: Indica si los archivos están comprimidos con gzip
+ *     responses:
+ *       200:
+ *         description: PDFs fusionados exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 fileId:
+ *                   type: string
+ *                   description: ID para descargar el PDF fusionado
+ *                 fileName:
+ *                   type: string
+ *                   example: merged.pdf
+ *                 totalPages:
+ *                   type: number
+ *                   description: Número total de páginas del PDF fusionado
+ *                 filesProcessed:
+ *                   type: number
+ *                   description: Cantidad de archivos procesados
+ *                 size:
+ *                   type: number
+ *                   description: Tamaño del PDF fusionado en bytes
+ *       400:
+ *         description: No se recibieron archivos o formato inválido
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Error en el servidor
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.post('/', upload.array('files', 50), async (req, res) => {
   const tempFiles = req.files ? req.files.map(f => f.path) : [];
   const outputFileName = req.body.fileName || 'merged.pdf';

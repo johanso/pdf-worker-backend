@@ -20,14 +20,77 @@ async function decompressIfNeeded(buffer, fileName) {
 }
 
 /**
- * POST /api/protect-pdf
- * Protege un PDF con contraseña usando QPDF
- * 
- * Body params:
- * - file: archivo PDF
- * - password: contraseña para abrir el PDF (mínimo 4 caracteres)
- * - encryption: '128' | '256' (default: '256')
- * - compressed: 'true' si el archivo viene comprimido con gzip
+ * @swagger
+ * /api/protect-pdf:
+ *   post:
+ *     summary: Protege un PDF con contraseña
+ *     tags: [Seguridad]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - file
+ *               - password
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *                 description: Archivo PDF o comprimido (.gz)
+ *               password:
+ *                 type: string
+ *                 description: Contraseña para abrir el PDF (mínimo 4 caracteres)
+ *                 example: miContraseña123
+ *               encryption:
+ *                 type: string
+ *                 enum: ['128', '256']
+ *                 description: Nivel de encriptación en bits
+ *                 default: '256'
+ *               fileName:
+ *                 type: string
+ *                 description: Nombre personalizado para el PDF resultante
+ *               compressed:
+ *                 type: string
+ *                 enum: ['true', 'false']
+ *                 description: Indica si el archivo está comprimido con gzip
+ *     responses:
+ *       200:
+ *         description: PDF protegido exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 fileId:
+ *                   type: string
+ *                   description: ID para descargar desde /api/download/:fileId
+ *                   example: abc123def456
+ *                 fileName:
+ *                   type: string
+ *                 originalSize:
+ *                   type: number
+ *                 resultSize:
+ *                   type: number
+ *                 encryption:
+ *                   type: string
+ *                   example: 256-bit
+ *       400:
+ *         description: Contraseña inválida o PDF ya protegido
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Error en el servidor
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.post('/', upload.single('file'), async (req, res) => {
   const tempFiles = req.file ? [req.file.path] : [];
@@ -139,8 +202,47 @@ router.post('/', upload.single('file'), async (req, res) => {
 });
 
 /**
- * GET /api/protect-pdf/info
- * Información sobre opciones disponibles
+ * @swagger
+ * /api/protect-pdf/info:
+ *   get:
+ *     summary: Obtiene información sobre opciones de protección disponibles
+ *     tags: [Seguridad]
+ *     responses:
+ *       200:
+ *         description: Información de configuración y opciones
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 description:
+ *                   type: string
+ *                 useCases:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *                 encryptionOptions:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       value:
+ *                         type: string
+ *                       label:
+ *                         type: string
+ *                       description:
+ *                         type: string
+ *                       default:
+ *                         type: boolean
+ *                 limits:
+ *                   type: object
+ *                   properties:
+ *                     maxFileSize:
+ *                       type: string
+ *                     minPasswordLength:
+ *                       type: number
+ *                 engine:
+ *                   type: string
  */
 router.get('/info', (req, res) => {
   res.json({

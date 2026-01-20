@@ -18,6 +18,77 @@ async function decompressIfNeeded(buffer, fileName) {
   return buffer;
 }
 
+/**
+ * @swagger
+ * /api/rotate-pdf:
+ *   post:
+ *     summary: Rota páginas específicas de un PDF
+ *     tags: [Manipulación PDF]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - file
+ *               - pageInstructions
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *                 description: Archivo PDF o comprimido (.gz)
+ *               pageInstructions:
+ *                 type: string
+ *                 description: Array JSON con instrucciones de rotación para cada página
+ *                 example: '[{"originalIndex":0,"rotation":90},{"originalIndex":1,"rotation":0}]'
+ *               fileName:
+ *                 type: string
+ *                 description: Nombre personalizado para el PDF resultante
+ *               compressed:
+ *                 type: string
+ *                 enum: ['true', 'false']
+ *                 description: Indica si el archivo está comprimido con gzip
+ *     responses:
+ *       200:
+ *         description: Rotación exitosa
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 fileId:
+ *                   type: string
+ *                   description: ID para descargar desde /api/download/:fileId
+ *                   example: abc123def456
+ *                 fileName:
+ *                   type: string
+ *                   example: rotated.pdf
+ *                 size:
+ *                   type: number
+ *                 pages:
+ *                   type: number
+ *                 rotatedPages:
+ *                   type: number
+ *                   description: Cantidad de páginas que fueron rotadas
+ *                 totalPages:
+ *                   type: number
+ *       400:
+ *         description: Índices de página fuera de rango o configuración inválida
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Error en el servidor
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.post('/', upload.single('file'), async (req, res) => {
   const tempFiles = req.file ? [req.file.path] : [];
   

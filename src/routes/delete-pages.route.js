@@ -20,6 +20,80 @@ async function decompressIfNeeded(buffer, fileName) {
   return buffer;
 }
 
+/**
+ * @swagger
+ * /api/delete-pages:
+ *   post:
+ *     summary: Elimina páginas de un PDF (guarda páginas específicas o las descarta)
+ *     tags: [Manipulación PDF]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - file
+ *               - pageInstructions
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *                 description: Archivo PDF o comprimido (.gz)
+ *               pageInstructions:
+ *                 type: string
+ *                 description: Array JSON con índices de páginas a mantener
+ *                 example: '[{"originalIndex":0},{"originalIndex":2}]'
+ *               mode:
+ *                 type: string
+ *                 enum: [merge, separate]
+ *                 description: Fusionar en un PDF o mantener como PDFs separados
+ *                 default: merge
+ *               fileName:
+ *                 type: string
+ *                 description: Nombre personalizado para el documento
+ *               compressed:
+ *                 type: string
+ *                 enum: ['true', 'false']
+ *                 description: Indica si el archivo está comprimido con gzip
+ *     responses:
+ *       200:
+ *         description: Páginas eliminadas exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 fileId:
+ *                   type: string
+ *                   description: ID para descargar desde /api/download/:fileId
+ *                   example: abc123def456
+ *                 fileName:
+ *                   type: string
+ *                 size:
+ *                   type: number
+ *                 outputFiles:
+ *                   type: number
+ *                 remainingPages:
+ *                   type: number
+ *                 totalOriginalPages:
+ *                   type: number
+ *       400:
+ *         description: Instrucciones inválidas o índices fuera de rango
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Error en el servidor
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.post('/', upload.single('file'), async (req, res) => {
   const tempFiles = req.file ? [req.file.path] : [];
   

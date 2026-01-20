@@ -19,33 +19,86 @@ async function decompressIfNeeded(buffer, fileName) {
 }
 
 /**
- * POST /api/worker/censure-pdf/search
- * Busca texto o patrones en el PDF y retorna las coordenadas
- * 
- * Body params:
- * - file: archivo PDF
- * - searchType: 'text' | 'creditCard' | 'phone' | 'email' | 'dni' | 'all'
- * - searchText: texto a buscar (solo si searchType === 'text')
- * - caseSensitive: 'true' | 'false' (default: false)
- * - compressed: 'true' si el archivo viene comprimido con gzip
- * 
- * Response:
- * {
- *   success: true,
- *   matches: [
- *     {
- *       pageNumber: 1,
- *       x: 100,
- *       y: 500,
- *       width: 200,
- *       height: 20,
- *       text: "4532 1234 5678 9010",
- *       type: "creditCard"
- *     }
- *   ],
- *   totalMatches: 15,
- *   pagesSummary: { 1: 5, 2: 10 }
- * }
+ * @swagger
+ * /api/censure-pdf/search:
+ *   post:
+ *     summary: Busca texto o patrones sensibles en un PDF
+ *     tags: [Seguridad]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - file
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *                 description: Archivo PDF o comprimido (.gz)
+ *               searchType:
+ *                 type: string
+ *                 enum: [text, creditCard, phone, email, dni, all]
+ *                 description: Tipo de búsqueda
+ *                 default: text
+ *               searchText:
+ *                 type: string
+ *                 description: Texto a buscar (requerido si searchType es 'text')
+ *               caseSensitive:
+ *                 type: string
+ *                 enum: ['true', 'false']
+ *                 description: Búsqueda sensible a mayúsculas
+ *                 default: 'false'
+ *               compressed:
+ *                 type: string
+ *                 enum: ['true', 'false']
+ *                 description: Indica si el archivo está comprimido con gzip
+ *     responses:
+ *       200:
+ *         description: Búsqueda completada
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 matches:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       pageNumber:
+ *                         type: number
+ *                       x:
+ *                         type: number
+ *                       y:
+ *                         type: number
+ *                       width:
+ *                         type: number
+ *                       height:
+ *                         type: number
+ *                       text:
+ *                         type: string
+ *                       type:
+ *                         type: string
+ *                 totalMatches:
+ *                   type: number
+ *                 pagesSummary:
+ *                   type: object
+ *       400:
+ *         description: Parámetros inválidos
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Error en el servidor
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.post('/search', upload.single('file'), async (req, res) => {
   const tempFiles = req.file ? [req.file.path] : [];
