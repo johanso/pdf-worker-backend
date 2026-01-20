@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -10,13 +11,71 @@ const {
 } = require('./src/middleware/rate-limit.middleware');
 
 const app = express();
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 
 // Trust proxy - necesario para obtener IPs reales detrás de reverse proxy (Caddy)
 app.set('trust proxy', 1);
 
+// ===== CONFIGURACIÓN DE CORS =====
+// Obtener orígenes permitidos desde variable de entorno
+const allowedOriginsEnv = process.env.ALLOWED_ORIGINS || '';
+const allowedOrigins = allowedOriginsEnv
+  .split(',')
+  .map(origin => origin.trim())
+  .filter(origin => origin.length > 0);
+
+// En desarrollo, permitir localhost si no hay orígenes configurados
+if (process.env.NODE_ENV === 'development' && allowedOrigins.length === 0) {
+  allowedOrigins.push('http://localhost:3000');
+  allowedOrigins.push('http://localhost:5173');
+  allowedOrigins.push('http://localhost:5174');
+  console.log('[CORS] Modo desarrollo: permitiendo localhost');
+}
+
+// Configuración de CORS restrictiva
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Permitir requests sin origin (ej: Postman, curl, aplicaciones móviles)
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    // Verificar si el origin está en la whitelist
+    if (allowedOrigins.length === 0) {
+      // Si no hay orígenes configurados, rechazar (excepto en desarrollo)
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[CORS] WARN: No hay orígenes configurados. Permitiendo ${origin} en desarrollo.`);
+        return callback(null, true);
+      }
+      console.log(`[CORS] Rechazado: ${origin} (no hay orígenes configurados)`);
+      return callback(new Error('No está permitido por CORS'));
+    }
+
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.log(`[CORS] Rechazado: ${origin}`);
+      console.log(`[CORS] Orígenes permitidos: ${allowedOrigins.join(', ')}`);
+      callback(new Error('No está permitido por CORS'));
+    }
+  },
+  credentials: true, // Permitir cookies/auth headers
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  exposedHeaders: ['RateLimit-Limit', 'RateLimit-Remaining', 'RateLimit-Reset'],
+  maxAge: 86400 // Cache preflight request por 24 horas
+};
+
+app.use(cors(corsOptions));
+
+// Log de configuración CORS al iniciar
+if (allowedOrigins.length > 0) {
+  console.log(`[CORS] Orígenes permitidos: ${allowedOrigins.join(', ')}`);
+} else {
+  console.log(`[CORS] ⚠️  ADVERTENCIA: No hay orígenes configurados en ALLOWED_ORIGINS`);
+}
+
 // Middleware
-app.use(cors());
 app.use(express.json());
 
 // Rate limiter general para todas las rutas /api/* como fallback
