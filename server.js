@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
+const compression = require('compression');
 const path = require('path');
 const fs = require('fs').promises;
 const swaggerUi = require('swagger-ui-express');
@@ -85,6 +86,10 @@ app.use(helmet({
   contentSecurityPolicy: false, // Desactivado para permitir Swagger UI
   crossOriginEmbedderPolicy: false // Compatible con CORS configurado
 }));
+
+// ===== COMPRESSION =====
+// Comprime respuestas JSON con gzip (ahorra 60-80% ancho de banda)
+app.use(compression());
 
 // Middleware
 app.use(express.json({ limit: '10mb' })); // Protección contra DoS con JSONs gigantes
