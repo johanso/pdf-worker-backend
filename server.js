@@ -187,6 +187,7 @@ app.use('/api/rotate-pdf', uploadLimiter, require('./src/routes/rotate-pdf.route
 app.use('/api/split-pdf', uploadLimiter, require('./src/routes/split-pdf.route'));
 app.use('/api/process-pages', uploadLimiter, require('./src/routes/process-pages.route'));
 app.use('/api/delete-pages', uploadLimiter, require('./src/routes/delete-pages.route'));
+app.use('/api/watermark-pdf', uploadLimiter, require('./src/routes/watermark-pdf.route'));
 
 // ===== RUTAS IMAGEMAGICK =====
 app.use('/api/pdf-to-image', uploadLimiter, require('./src/routes/pdf-to-image.route'));

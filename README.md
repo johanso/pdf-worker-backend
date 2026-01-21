@@ -113,7 +113,31 @@ El servidor expone múltiples endpoints REST para procesamiento de PDFs:
 - **OCR**: `/api/ocr-pdf`
 - **Otros**: `/api/html-to-pdf`, `/api/repair-pdf`, `/api/sign-pdf`
 
-Ver documentación completa de API en `/docs` (próximamente).
+Ver documentación completa de API en `/api-docs` (Swagger UI).
+
+## Desarrollo
+
+### Guías de Desarrollo
+
+Para mantener consistencia en el código y seguir los patrones establecidos:
+
+- **[DEVELOPMENT_GUIDE.md](./DEVELOPMENT_GUIDE.md)** - Guía completa con templates, patrones y mejores prácticas
+- **[.claude/conventions.md](./.claude/conventions.md)** - Referencia rápida de convenciones
+
+Estas guías documentan:
+- Estructura de archivos y naming conventions
+- Templates para servicios y rutas
+- Documentación Swagger estándar
+- Formato de respuestas y manejo de errores
+- Validación de parámetros y limpieza de archivos
+
+### Agregar un Nuevo Endpoint
+
+1. Crear servicio en `src/services/nombre.service.js`
+2. Crear ruta en `src/routes/nombre.route.js`
+3. Agregar documentación Swagger
+4. Registrar en `server.js`
+5. Seguir checklist en DEVELOPMENT_GUIDE.md
 
 ## Comandos Útiles
 
