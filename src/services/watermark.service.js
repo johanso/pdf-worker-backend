@@ -1,5 +1,7 @@
 const { PDFDocument, rgb, degrees, StandardFonts } = require('pdf-lib');
 const fs = require('fs').promises;
+const path = require('path');
+const { execFileWithTimeout } = require('../utils/file.utils');
 
 /**
  * Posiciones predefinidas para las marcas de agua
@@ -46,6 +48,50 @@ function hexToRgb(hex) {
   const b = parseInt(hex.substring(4, 6), 16) / 255;
 
   return { r, g, b };
+}
+
+/**
+ * Convierte una imagen a formato PNG estándar usando ImageMagick
+ * Útil cuando pdf-lib no puede procesar el formato original
+ * @param {Buffer} imageBuffer - Buffer de la imagen original
+ * @returns {Promise<Buffer>} - Buffer de la imagen convertida a PNG
+ */
+async function convertImageToPng(imageBuffer) {
+  const tempDir = path.join(__dirname, '../../outputs');
+  const timestamp = Date.now();
+  const inputPath = path.join(tempDir, `temp-img-${timestamp}.img`);
+  const outputPath = path.join(tempDir, `temp-img-${timestamp}.png`);
+
+  try {
+    // Escribir buffer a archivo temporal
+    await fs.writeFile(inputPath, imageBuffer);
+
+    // Convertir con ImageMagick a PNG estándar
+    await execFileWithTimeout('convert', [
+      inputPath,
+      '-strip',           // Remover metadata
+      '-background', 'white',  // Fondo blanco para transparencias
+      '-alpha', 'remove',      // Aplanar transparencias
+      '-quality', '100',       // Máxima calidad
+      'PNG:' + outputPath      // Forzar formato PNG
+    ], { timeout: 30000 });
+
+    // Leer el PNG convertido
+    const convertedBuffer = await fs.readFile(outputPath);
+
+    // Limpiar archivos temporales
+    await fs.unlink(inputPath).catch(() => {});
+    await fs.unlink(outputPath).catch(() => {});
+
+    console.log('[Watermark] Image converted to standard PNG via ImageMagick');
+    return convertedBuffer;
+
+  } catch (error) {
+    // Limpiar en caso de error
+    await fs.unlink(inputPath).catch(() => {});
+    await fs.unlink(outputPath).catch(() => {});
+    throw error;
+  }
 }
 
 /**
@@ -244,17 +290,57 @@ async function addImageWatermark(pdfBuffer, imageBuffer, options) {
 
   const pdfDoc = await PDFDocument.load(pdfBuffer);
 
-  // Detectar tipo de imagen y embedear
+  // Detectar tipo de imagen basándose en magic bytes
+  const detectImageType = (buffer) => {
+    const header = buffer.slice(0, 8);
+
+    // PNG: 89 50 4E 47 0D 0A 1A 0A
+    if (header[0] === 0x89 && header[1] === 0x50 && header[2] === 0x4E && header[3] === 0x47) {
+      return 'PNG';
+    }
+
+    // JPEG: FF D8 FF
+    if (header[0] === 0xFF && header[1] === 0xD8 && header[2] === 0xFF) {
+      return 'JPEG';
+    }
+
+    return 'UNKNOWN';
+  };
+
+  const detectedType = detectImageType(imageBuffer);
+  console.log(`[Watermark] Detected image type: ${detectedType}, Size: ${imageBuffer.length} bytes`);
+
+  // Intentar embedear la imagen
   let image;
+  let embedErrors = [];
+
   try {
     // Intentar como PNG primero
     image = await pdfDoc.embedPng(imageBuffer);
+    console.log('[Watermark] Successfully embedded as PNG');
   } catch (e) {
+    embedErrors.push(`PNG: ${e.message}`);
     try {
       // Si falla, intentar como JPG
       image = await pdfDoc.embedJpg(imageBuffer);
+      console.log('[Watermark] Successfully embedded as JPG');
     } catch (e2) {
-      throw new Error('Formato de imagen no soportado. Use PNG o JPG');
+      embedErrors.push(`JPEG: ${e2.message}`);
+
+      // Último intento: convertir con ImageMagick
+      console.log('[Watermark] pdf-lib failed, trying ImageMagick conversion...');
+      try {
+        const convertedBuffer = await convertImageToPng(imageBuffer);
+        image = await pdfDoc.embedPng(convertedBuffer);
+        console.log('[Watermark] Successfully embedded after ImageMagick conversion');
+      } catch (e3) {
+        embedErrors.push(`Conversion: ${e3.message}`);
+        throw new Error(
+          `Formato de imagen no soportado. ` +
+          `Tipo detectado: ${detectedType}. ` +
+          `Detalles: ${embedErrors.join(' | ')}`
+        );
+      }
     }
   }
 

@@ -385,6 +385,7 @@ router.post('/image', upload.fields([
     }
 
     const imageBuffer = await fs.readFile(imageFile.path);
+    console.log(`[Watermark] Image file: ${imageFile.originalname}, Size: ${imageBuffer.length} bytes, Mimetype: ${imageFile.mimetype}`);
 
     // Parsear páginas
     let pages = 'all';
